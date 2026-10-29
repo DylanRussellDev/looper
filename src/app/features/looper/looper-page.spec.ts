@@ -11,6 +11,7 @@ describe('LooperPage', () => {
   let element: HTMLElement;
 
   beforeEach(async () => {
+    localStorage.clear();
     engine = new FakeAudioEngine();
     engine.status.set('idle');
 
@@ -119,6 +120,20 @@ describe('LooperPage', () => {
 
       expect(undo).toHaveBeenCalledOnce();
       expect(redo).toHaveBeenCalledOnce();
+    });
+
+    it('shows and hides the input settings with I, even before audio starts', async () => {
+      engine.status.set('idle');
+      const button = () => element.querySelector('.collapse-button')!;
+
+      pressKey('i');
+      await fixture.whenStable();
+      expect(button().getAttribute('aria-expanded')).toBe('false');
+
+      pressKey('I');
+      pressKey('i', element.querySelector('#latency-offset')!);
+      await fixture.whenStable();
+      expect(button().getAttribute('aria-expanded')).toBe('true');
     });
 
     it('gives each footswitch its number key', () => {

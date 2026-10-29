@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, viewChild } from '@angular/core';
 
 import { LevelMeter } from '@shared/components/level-meter/level-meter';
 import { ToggleSwitch } from '@shared/components/toggle-switch/toggle-switch';
@@ -9,6 +9,12 @@ import { isClipping, toMeterLevel } from '../audio/level';
 import { fromDecibels } from '../audio/noise-gate';
 import { LooperStore } from '../looper-store';
 import { NoiseGate } from '../noise-gate/noise-gate';
+import { InputPanelLayout } from './input-panel-layout';
+
+interface StatusMessage {
+  text: string;
+  isError: boolean;
+}
 
 const CALIBRATING_MESSAGE = 'Listening for the test clicks…';
 
@@ -24,6 +30,11 @@ const CALIBRATING_MESSAGE = 'Listening for the test clicks…';
 export class InputPanel {
   readonly #engine = inject(AudioEngine);
   readonly #store = inject(LooperStore);
+  readonly #layout = inject(InputPanelLayout);
+  // viewChild can't be an ES private field.
+  protected readonly noiseGate = viewChild.required(NoiseGate);
+
+  protected readonly isCollapsed = this.#layout.isCollapsed;
 
   protected readonly inputDevices = this.#engine.inputDevices;
   protected readonly selectedDeviceId = this.#engine.selectedDeviceId;
@@ -78,6 +89,18 @@ export class InputPanel {
   );
   protected readonly calibrationMessage = signal('');
   protected readonly isCalibrationFailed = signal(false);
+  protected readonly measurementMessages = computed(() => {
+    const noiseGate = this.noiseGate();
+    const messages: StatusMessage[] = [
+      { text: this.calibrationMessage(), isError: this.isCalibrationFailed() },
+      { text: noiseGate.detectionMessage(), isError: noiseGate.isDetectionFailed() },
+    ];
+    return messages.filter((message) => message.text !== '');
+  });
+
+  protected toggleCollapsed(): void {
+    this.#layout.toggle();
+  }
 
   protected selectDevice(deviceId: string): void {
     void this.#engine.selectDevice(deviceId);

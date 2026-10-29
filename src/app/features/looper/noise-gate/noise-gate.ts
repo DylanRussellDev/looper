@@ -71,8 +71,9 @@ export class NoiseGate {
   protected readonly detectButtonLabel = computed(() =>
     this.isDetecting() ? 'Cancel detection' : 'Detect noise',
   );
-  protected readonly detectionMessage = signal('');
-  protected readonly isDetectionFailed = signal(false);
+  /** Read by the Input panel, which repeats it while its settings are collapsed. */
+  readonly detectionMessage = signal('');
+  readonly isDetectionFailed = signal(false);
 
   protected setThreshold(position: number): void {
     this.#engine.setGateThreshold(position <= OFF_POSITION ? null : position);

@@ -29,6 +29,7 @@ export class Pedal {
   readonly gateThreshold: Locator;
   readonly detectNoiseButton: Locator;
   readonly noiseDetectionStatus: Locator;
+  readonly collapseButton: Locator;
 
   constructor(readonly page: Page) {
     this.enableAudioButton = page.getByRole('button', { name: 'Enable audio' });
@@ -48,6 +49,7 @@ export class Pedal {
     this.gateThreshold = page.getByLabel('Noise gate');
     this.detectNoiseButton = page.locator('.detect-button');
     this.noiseDetectionStatus = page.locator('.detection-status');
+    this.collapseButton = page.locator('.collapse-button');
   }
 
   volume(trackId: number): Locator {

@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FakeAudioEngine, provideFakeAudioEngine } from '../audio/audio-engine.testing';
 import { AUDIO_ERROR_MESSAGES } from '../audio/audio-errors';
 import { CALIBRATION_FAILURE_MESSAGES, CalibrationError } from '../audio/latency-calibration';
+import { NOISE_DETECTION_FAILURE_MESSAGES, NoiseDetectionError } from '../audio/noise-gate';
 import { LooperStore } from '../looper-store';
 import { InputPanel } from './input-panel';
 
@@ -13,6 +14,7 @@ describe('InputPanel', () => {
   let element: HTMLElement;
 
   beforeEach(async () => {
+    localStorage.clear();
     engine = new FakeAudioEngine();
     engine.inputDevices.set([
       { deviceId: 'interface', label: 'Focusrite USB Audio' },
@@ -77,6 +79,65 @@ describe('InputPanel', () => {
     toggle.click();
 
     expect(engine.setMonitorEnabled).toHaveBeenCalledWith(false);
+  });
+
+  describe('collapsing', () => {
+    const getButton = () => element.querySelector<HTMLButtonElement>('.collapse-button')!;
+    const getSettings = () => element.querySelector<HTMLElement>('#input-panel-settings')!;
+    const getCollapsedStatus = () => element.querySelector('.collapsed-status')!;
+
+    async function collapse(): Promise<void> {
+      getButton().click();
+      await fixture.whenStable();
+    }
+
+    it('starts expanded, with the button controlling the settings', () => {
+      expect(getButton().getAttribute('aria-expanded')).toBe('true');
+      expect(getButton().getAttribute('aria-controls')).toBe('input-panel-settings');
+      expect(getSettings().inert).toBe(false);
+    });
+
+    it('hides the settings but keeps the meter and monitor toggle', async () => {
+      await collapse();
+
+      expect(getButton().getAttribute('aria-expanded')).toBe('false');
+      expect(getSettings().inert).toBe(true);
+      expect(getSettings().classList).toContain('is-collapsed');
+      expect(getSettings().querySelector('#input-device')).not.toBeNull();
+      expect(getSettings().querySelector('meter')).toBeNull();
+      expect(getSettings().querySelector('input[role="switch"]')).toBeNull();
+      expect(element.querySelector('meter')).not.toBeNull();
+
+      await collapse();
+      expect(getSettings().inert).toBe(false);
+    });
+
+    it('still shows errors while collapsed', async () => {
+      await collapse();
+      engine.error.set('device-unplugged');
+      engine.isInputConnected.set(false);
+      await fixture.whenStable();
+
+      const alert = element.querySelector('[role="alert"]')!;
+      expect(getSettings().contains(alert)).toBe(false);
+      expect(alert.textContent).toContain(AUDIO_ERROR_MESSAGES['device-unplugged']);
+    });
+
+    it('shows measurement progress and results under the strip while collapsed', async () => {
+      expect(getCollapsedStatus().textContent!.trim()).toBe('');
+      await collapse();
+
+      engine.calibrateLatency.mockResolvedValueOnce(23);
+      element.querySelector<HTMLButtonElement>('.calibrate-button')!.click();
+      await fixture.whenStable();
+      expect(getCollapsedStatus().textContent).toContain('Measured 23 ms round trip');
+
+      engine.detectNoise.mockRejectedValueOnce(new NoiseDetectionError('too-loud'));
+      element.querySelector<HTMLButtonElement>('.detect-button')!.click();
+      await fixture.whenStable();
+      const error = getCollapsedStatus().querySelector('.is-error')!;
+      expect(error.textContent).toContain(NOISE_DETECTION_FAILURE_MESSAGES['too-loud']);
+    });
   });
 
   describe('noise gate', () => {

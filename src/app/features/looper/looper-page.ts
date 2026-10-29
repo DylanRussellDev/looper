@@ -3,6 +3,7 @@ import { Component, computed, inject } from '@angular/core';
 import { AudioEngine } from './audio/audio-engine';
 import { Footswitch } from './footswitch/footswitch';
 import { InputPanel } from './input-panel/input-panel';
+import { InputPanelLayout } from './input-panel/input-panel-layout';
 import { isShortcutKeyEvent } from './keyboard/shortcut-keys';
 import { LoopPosition } from './loop-position/loop-position';
 import { LooperStore } from './looper-store';
@@ -22,6 +23,7 @@ import { TrackVolume } from './track-volume/track-volume';
 export class LooperPage {
   readonly #engine = inject(AudioEngine);
   readonly #store = inject(LooperStore);
+  readonly #inputPanelLayout = inject(InputPanelLayout);
 
   protected readonly tracks = this.#store.tracks;
   protected readonly notice = this.#store.notice;
@@ -71,12 +73,21 @@ export class LooperPage {
     this.#store.setTrackVolume(trackId, volume);
   }
 
-  /** Z and Y; the footswitches handle their own number keys. */
+  /** Z, Y and I; the footswitches handle their own number keys. */
   protected handleShortcut(event: KeyboardEvent): void {
-    if (event.repeat || !this.isAudioRunning() || !isShortcutKeyEvent(event)) {
+    if (event.repeat || !isShortcutKeyEvent(event)) {
       return;
     }
-    switch (event.key.toLowerCase()) {
+    const key = event.key.toLowerCase();
+    // Showing or hiding settings is layout only, so it works before audio starts too.
+    if (key === 'i') {
+      this.#inputPanelLayout.toggle();
+      return;
+    }
+    if (!this.isAudioRunning()) {
+      return;
+    }
+    switch (key) {
       case 'z':
         this.undo();
         break;
