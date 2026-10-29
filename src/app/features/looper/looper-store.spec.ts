@@ -513,6 +513,13 @@ describe('LooperStore', () => {
       expect(store.lastTouchedTrackId()).toBeNull();
     });
 
+    it('ignores the footswitches while detecting noise', () => {
+      engine.isDetectingNoise.set(true);
+      store.pressFootswitch(1, 'tap');
+
+      expect(engine.startRecording).not.toHaveBeenCalled();
+    });
+
     it('reports when any track is capturing input', async () => {
       expect(store.isAnyTrackCapturing()).toBe(false);
       store.tapTrack(1);

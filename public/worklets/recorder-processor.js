@@ -24,20 +24,34 @@
  *
  * Several takes can run at once (e.g. two tracks armed for the same loop boundary).
  *
+ * Noise gate: the input is metered first (so the meter shows the noise the gate removes),
+ * then gated. The gated audio is what gets recorded and what this node outputs, which the
+ * engine routes to the monitor, so what you hear is what you loop. A threshold of 0
+ * turns the gate off.
+ *
  * Message protocol (mirrored in src/app/features/looper/audio/recorder-messages.ts):
  *   in:  record { takeId, startFrame } | stop { takeId, stopFrame } | cancel { takeId }
- *        | recycle { chunk }
+ *        | recycle { chunk } | gate { threshold }
  *   out: started { takeId, startFrame } | chunk { takeId, chunk, length }
- *        | recorded { takeId, startFrame, lengthFrames } | level { peak, rms }
+ *        | recorded { takeId, startFrame, lengthFrames } | level { peak, rms, isGateOpen }
  */
 
 // Spare chunks for all concurrent takes; the main thread returns each within milliseconds.
 const CHUNK_POOL_SIZE = 8;
+// -3 dB: an open gate closes once the input falls to about 0.71 of the threshold.
+const GATE_CLOSE_RATIO = 0.708;
 
 class RecorderProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    const { chunkFrames, historyFrames, levelIntervalFrames } = options.processorOptions;
+    const {
+      chunkFrames,
+      historyFrames,
+      levelIntervalFrames,
+      gateAttackFrames,
+      gateHoldFrames,
+      gateReleaseFrames,
+    } = options.processorOptions;
 
     this.chunkFrames = chunkFrames;
     this.chunkPool = Array.from({ length: CHUNK_POOL_SIZE }, () => new Float32Array(chunkFrames));
@@ -55,6 +69,16 @@ class RecorderProcessor extends AudioWorkletProcessor {
     this.levelPeak = 0;
     this.levelSumSquares = 0;
     this.levelFrames = 0;
+    this.levelGateOpen = false;
+
+    // Gate state. The gain ramps instead of switching, so opening and closing don't click:
+    // fast up (the pick attack must get through), slow down (a note's tail fades out).
+    this.gateThreshold = 0;
+    this.gateGain = 1;
+    this.gateHoldRemaining = 0;
+    this.gateHoldFrames = gateHoldFrames;
+    this.gateAttackStep = 1 / gateAttackFrames;
+    this.gateReleaseStep = 1 / gateReleaseFrames;
 
     this.port.onmessage = (event) => this.handleCommand(event.data);
   }
@@ -91,6 +115,9 @@ class RecorderProcessor extends AudioWorkletProcessor {
         }
         break;
       }
+      case 'gate':
+        this.gateThreshold = command.threshold;
+        break;
       case 'recycle':
         if (command.chunk.length === this.chunkFrames) {
           this.chunkPool.push(command.chunk);
@@ -99,14 +126,16 @@ class RecorderProcessor extends AudioWorkletProcessor {
     }
   }
 
-  process(inputs) {
+  process(inputs, outputs) {
     // With no source connected (e.g. the device was unplugged) the input has zero
     // channels. We treat that as silence so the timeline keeps moving.
     const samples = inputs[0]?.[0];
-    const blockFrames = samples?.length ?? 128;
+    const gated = outputs[0][0];
+    const blockFrames = gated.length;
 
-    this.writeHistory(samples, blockFrames);
     this.measureLevel(samples, blockFrames);
+    this.applyGate(samples, gated);
+    this.writeHistory(gated, blockFrames);
     // Backwards so finished takes can be removed while iterating.
     for (let i = this.takes.length - 1; i >= 0; i--) {
       this.serviceTake(this.takes[i], i);
@@ -119,9 +148,40 @@ class RecorderProcessor extends AudioWorkletProcessor {
   writeHistory(samples, blockFrames) {
     const blockStart = currentFrame;
     for (let i = 0; i < blockFrames; i++) {
-      this.history[(blockStart + i) % this.historyFrames] = samples ? samples[i] : 0;
+      this.history[(blockStart + i) % this.historyFrames] = samples[i];
     }
     this.historyEndFrame = blockStart + blockFrames;
+  }
+
+  /** Writes the gated input into `output`. */
+  applyGate(samples, output) {
+    if (!samples) {
+      output.fill(0);
+      return;
+    }
+    const threshold = this.gateThreshold;
+    // Hysteresis: once open, the gate stays open down to 3 dB below the threshold, so a
+    // note hovering around the threshold doesn't chatter open and shut. It must stay
+    // smaller than noise detection's 6 dB margin, or the noise alone would hold it open.
+    const closeThreshold = threshold * GATE_CLOSE_RATIO;
+    for (let i = 0; i < output.length; i++) {
+      const sample = samples[i];
+      const magnitude = sample < 0 ? -sample : sample;
+      const keepOpenAt = this.gateGain > 0 ? closeThreshold : threshold;
+      if (threshold <= 0 || magnitude >= keepOpenAt) {
+        this.gateHoldRemaining = this.gateHoldFrames;
+      }
+      if (this.gateHoldRemaining > 0) {
+        this.gateHoldRemaining--;
+        this.gateGain = Math.min(1, this.gateGain + this.gateAttackStep);
+      } else {
+        this.gateGain = Math.max(0, this.gateGain - this.gateReleaseStep);
+      }
+      if (this.gateGain > 0) {
+        this.levelGateOpen = true;
+      }
+      output[i] = sample * this.gateGain;
+    }
   }
 
   serviceTake(take, index) {
@@ -233,7 +293,9 @@ class RecorderProcessor extends AudioWorkletProcessor {
         type: 'level',
         peak: this.levelPeak,
         rms: Math.sqrt(this.levelSumSquares / this.levelFrames),
+        isGateOpen: this.levelGateOpen,
       });
+      this.levelGateOpen = false;
       this.levelPeak = 0;
       this.levelSumSquares = 0;
       this.levelFrames = 0;

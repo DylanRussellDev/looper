@@ -28,6 +28,24 @@ describe('LevelMeter', () => {
     expect(element.querySelector(`#${labelId}`)!.textContent).toContain('Input level');
   });
 
+  it('draws no threshold line unless given one', async () => {
+    expect(element.querySelector('.marker')).toBeNull();
+
+    fixture.componentRef.setInput('marker', 0.25);
+    await fixture.whenStable();
+
+    const marker = element.querySelector<HTMLElement>('.marker')!;
+    expect(marker.style.getPropertyValue('--marker-position')).toBe('0.25');
+    expect(marker.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('dims the bar', async () => {
+    fixture.componentRef.setInput('isDimmed', true);
+    await fixture.whenStable();
+
+    expect(element.querySelector('meter')!.classList).toContain('is-dimmed');
+  });
+
   it('lights the clip indicator', async () => {
     fixture.componentRef.setInput('isClipping', true);
     await fixture.whenStable();

@@ -19,7 +19,7 @@ export const AUDIO_ERROR_MESSAGES: Record<AudioErrorCode, string> = {
   'device-unplugged':
     'The input device was disconnected. Reconnect it or choose another input. Your loops are still playing.',
   'recorder-failed':
-    'The recorder stopped working, so nothing new can be recorded. Your loops are still playing. Reload the page to record again.',
+    'The recorder stopped working, so nothing new can be recorded and your input is no longer heard. Your loops are still playing. Reload the page to record again.',
 };
 
 /** Maps a getUserMedia rejection to a user-facing error code. */

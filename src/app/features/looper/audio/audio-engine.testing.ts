@@ -1,4 +1,4 @@
-import { Provider, signal } from '@angular/core';
+import { Provider, computed, signal } from '@angular/core';
 import { Subject } from 'rxjs';
 
 import { Layer, MasterLoop } from '../models/track';
@@ -13,6 +13,7 @@ import {
   TakeKind,
 } from './audio-engine';
 import { AudioErrorCode } from './audio-errors';
+import { DetectedNoise } from './noise-gate';
 
 /** A stopRecording result the test resolves or rejects by hand. */
 export interface ControlledTake {
@@ -56,6 +57,10 @@ export class FakeAudioEngine {
   readonly reportedOutputLatencyMs = signal<number | null>(null);
   readonly isBuiltInMicSelected = signal(false);
   readonly isCalibrating = signal(false);
+  readonly isDetectingNoise = signal(false);
+  readonly isMeasuring = computed(() => this.isCalibrating() || this.isDetectingNoise());
+  readonly gateThresholdDb = signal<number | null>(null);
+  readonly isGateOpen = signal(true);
   readonly isSuspended = signal(false);
   readonly inputInterrupted = new Subject<void>();
   readonly inputInterrupted$ = this.inputInterrupted.asObservable();
@@ -73,6 +78,12 @@ export class FakeAudioEngine {
   readonly resumeAudio = vi.fn(async () => undefined);
   readonly calibrateLatency = vi.fn<() => Promise<number>>(async () => 0);
   readonly cancelCalibration = vi.fn();
+  readonly detectNoise = vi.fn<() => Promise<DetectedNoise>>(async () => ({
+    noiseDb: -70,
+    thresholdDb: -64,
+  }));
+  readonly cancelNoiseDetection = vi.fn();
+  readonly setGateThreshold = vi.fn<(decibels: number | null) => void>();
   readonly getSampleRate = vi.fn(() => 48_000);
   readonly getAudibleFrame = vi.fn(() => this.currentFrame);
   readonly setInputGain = vi.fn();

@@ -1,14 +1,20 @@
 <span class="label" [id]="labelId">{{ label() }}</span>
 <div class="row">
-  <meter
-    min="0"
-    max="1"
-    low="0.75"
-    high="0.92"
-    optimum="0.5"
-    [value]="value()"
-    [attr.aria-labelledby]="labelId"
-  ></meter>
+  <div class="scale">
+    <meter
+      min="0"
+      max="1"
+      low="0.75"
+      high="0.92"
+      optimum="0.5"
+      [class.is-dimmed]="isDimmed()"
+      [value]="value()"
+      [attr.aria-labelledby]="labelId"
+    ></meter>
+    @if (marker() !== null) {
+      <span class="marker" aria-hidden="true" [style.--marker-position]="marker()"></span>
+    }
+  </div>
   <span class="clip" [class.is-active]="isClipping()">
     Clip
     @if (isClipping()) {

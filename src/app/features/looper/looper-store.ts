@@ -124,8 +124,8 @@ export class LooperStore {
   }
 
   pressFootswitch(trackId: number, action: FootswitchAction): void {
-    // Calibration owns the input and output until it finishes.
-    if (this.#engine.isCalibrating()) {
+    // Calibration and noise detection own the input and output until they finish.
+    if (this.#engine.isMeasuring()) {
       return;
     }
     this.#notice.set('');

@@ -79,6 +79,40 @@ describe('InputPanel', () => {
     expect(engine.setMonitorEnabled).toHaveBeenCalledWith(false);
   });
 
+  describe('noise gate', () => {
+    const getMarker = () => element.querySelector<HTMLElement>('.marker');
+
+    it('marks the threshold on the meter, after the input gain', async () => {
+      expect(getMarker()).toBeNull();
+
+      engine.gateThresholdDb.set(-48);
+      engine.inputGain.set(2);
+      await fixture.whenStable();
+
+      // -48 dB plus 6 dB of gain sits at -42 dB: 0.3 of the way up a -60..0 dB meter.
+      const position = Number(getMarker()!.style.getPropertyValue('--marker-position'));
+      expect(position).toBeCloseTo(0.3, 2);
+    });
+
+    it('dims the meter while the gate is closed', async () => {
+      engine.isGateOpen.set(false);
+      await fixture.whenStable();
+      expect(element.querySelector('meter')!.classList).not.toContain('is-dimmed');
+
+      engine.gateThresholdDb.set(-48);
+      await fixture.whenStable();
+      expect(element.querySelector('meter')!.classList).toContain('is-dimmed');
+    });
+
+    it('locks the gain and calibration while detecting noise', async () => {
+      engine.isDetectingNoise.set(true);
+      await fixture.whenStable();
+
+      expect(element.querySelector<HTMLInputElement>('#input-gain')!.disabled).toBe(true);
+      expect(element.querySelector<HTMLButtonElement>('.calibrate-button')!.disabled).toBe(true);
+    });
+  });
+
   describe('latency calibration', () => {
     const getButton = () => element.querySelector<HTMLButtonElement>('.calibrate-button')!;
     const getStatus = () => element.querySelector('.calibration-status')!.textContent!.trim();

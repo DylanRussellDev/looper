@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 
 import { AudioEngine } from './audio-engine';
 import { CALIBRATION_CLICK_COUNT, createClickSamples } from './latency-calibration';
+import { fromDecibels } from './noise-gate';
 import { RecorderCommand, RecorderEvent } from './recorder-messages';
 
 // Minimal Web Audio stand-ins: enough surface for the engine's routing calls.
@@ -588,6 +589,178 @@ describe('AudioEngine', () => {
       await engine.start();
 
       await expect(engine.calibrateLatency()).rejects.toMatchObject({ reason: 'no-input' });
+    });
+  });
+
+  describe('noise gate', () => {
+    function getPostedCommands(): RecorderCommand[] {
+      return workletNodes[0]!.port.postMessage.mock.calls.map(
+        ([command]) => command as RecorderCommand,
+      );
+    }
+
+    function getGateThreshold(): number | undefined {
+      const command = getPostedCommands()
+        .filter((posted) => posted.type === 'gate')
+        .at(-1);
+      return command?.type === 'gate' ? command.threshold : undefined;
+    }
+
+    function getLastTakeId(): number {
+      const command = getPostedCommands()
+        .filter((posted) => posted.type === 'record')
+        .at(-1);
+      return command?.type === 'record' ? command.takeId : 0;
+    }
+
+    // The clock is at 1 s (frame 48 000); listening starts 250 ms later and lasts 2 s.
+    const listenStartFrame = 60_000;
+    const listenFrames = 96_000;
+
+    function deliverNoise(peak: number): void {
+      const samples = new Float32Array(listenFrames).fill(peak / 4);
+      samples[1234] = peak;
+      const takeId = getLastTakeId();
+      const recorder = workletNodes[0]!;
+      recorder.emit({ type: 'chunk', takeId, chunk: samples, length: listenFrames });
+      recorder.emit({
+        type: 'recorded',
+        takeId,
+        startFrame: listenStartFrame,
+        lengthFrames: listenFrames,
+      });
+    }
+
+    it('gates the input before it reaches the monitor', async () => {
+      await engine.start();
+      const [inputGain, monitorGain] = contexts[0]!.createGain.mock.results.map(
+        (result) => result.value as ReturnType<typeof createFakeNode>,
+      );
+      const recorder = workletNodes[0]!;
+
+      expect(inputGain!.connect).toHaveBeenCalledWith(recorder);
+      expect(inputGain!.connect).not.toHaveBeenCalledWith(monitorGain);
+      expect(recorder.connect).toHaveBeenCalledWith(monitorGain);
+      expect(getGateThreshold()).toBe(0);
+    });
+
+    it('compares the threshold with the signal before the input gain', async () => {
+      await engine.start();
+
+      engine.setGateThreshold(-40);
+      expect(getGateThreshold()).toBeCloseTo(0.01);
+      // The worklet sees the signal after the gain, so the threshold moves with it.
+      engine.setInputGain(2);
+      expect(getGateThreshold()).toBeCloseTo(0.02);
+      engine.setGateThreshold(null);
+      expect(getGateThreshold()).toBe(0);
+      expect(engine.gateThresholdDb()).toBeNull();
+    });
+
+    it('reports whether the gate is letting audio through', async () => {
+      await engine.start();
+
+      workletNodes[0]!.emit({ type: 'level', peak: 0.001, rms: 0.0005, isGateOpen: false });
+
+      expect(engine.isGateOpen()).toBe(false);
+      expect(engine.inputLevel().peak).toBe(0.001);
+    });
+
+    it('is bypassed during latency calibration', async () => {
+      await engine.start();
+      engine.setGateThreshold(-40);
+
+      const result = engine.calibrateLatency();
+      expect(getGateThreshold()).toBe(0);
+      engine.cancelCalibration();
+
+      await expect(result).rejects.toMatchObject({ reason: 'cancelled' });
+      expect(getGateThreshold()).toBeCloseTo(0.01);
+    });
+
+    describe('noise detection', () => {
+      it('listens to the raw input with loops muted, then sets the threshold above the noise', async () => {
+        await engine.start();
+        const [, monitorGain, loopBus] = contexts[0]!.createGain.mock.results.map(
+          (result) => result.value as ReturnType<typeof createFakeNode>,
+        );
+        engine.setGateThreshold(-30);
+        engine.setInputGain(2);
+        engine.setLatencyOffset(100);
+
+        const result = engine.detectNoise();
+        expect(engine.isDetectingNoise()).toBe(true);
+        expect(engine.isMeasuring()).toBe(true);
+        expect(getGateThreshold()).toBe(0);
+        expect(monitorGain!.gain.setTargetAtTime).toHaveBeenLastCalledWith(0, 1, 0.01);
+        expect(loopBus!.gain.setTargetAtTime).toHaveBeenLastCalledWith(0, 1, 0.01);
+        // On the raw clock, ignoring the latency offset.
+        expect(workletNodes[0]!.port.postMessage).toHaveBeenCalledWith(
+          { type: 'record', takeId: getLastTakeId(), startFrame: listenStartFrame },
+          [],
+        );
+
+        // Recorded at a gain of 2: the noise itself peaks at -60 dB.
+        deliverNoise(2 * fromDecibels(-60));
+
+        await expect(result).resolves.toEqual({ noiseDb: expect.closeTo(-60), thresholdDb: -54 });
+        expect(engine.gateThresholdDb()).toBe(-54);
+        expect(getGateThreshold()).toBeCloseTo(2 * fromDecibels(-54));
+        expect(engine.isDetectingNoise()).toBe(false);
+        expect(loopBus!.gain.setTargetAtTime).toHaveBeenLastCalledWith(1, 1, 0.01);
+      });
+
+      it('leaves the threshold alone when the input was too loud to be noise', async () => {
+        await engine.start();
+        engine.setGateThreshold(-50);
+        const result = engine.detectNoise();
+
+        deliverNoise(0.5);
+
+        await expect(result).rejects.toMatchObject({ reason: 'too-loud' });
+        expect(engine.gateThresholdDb()).toBe(-50);
+        expect(getGateThreshold()).toBeCloseTo(fromDecibels(-50));
+      });
+
+      it('can be cancelled, but not by cancelling calibration', async () => {
+        await engine.start();
+        const result = engine.detectNoise();
+
+        engine.cancelCalibration();
+        expect(engine.isDetectingNoise()).toBe(true);
+        engine.cancelNoiseDetection();
+
+        await expect(result).rejects.toMatchObject({ reason: 'cancelled' });
+        expect(engine.isDetectingNoise()).toBe(false);
+        expect(engine.gateThresholdDb()).toBeNull();
+      });
+
+      it('stops when the input is unplugged', async () => {
+        await engine.start();
+        const result = engine.detectNoise();
+
+        track.fire('ended');
+
+        await expect(result).rejects.toMatchObject({ reason: 'input-lost' });
+      });
+
+      it('needs a connected input', async () => {
+        mediaDevices.getUserMedia.mockRejectedValueOnce(
+          new DOMException('denied', 'NotAllowedError'),
+        );
+        await engine.start();
+
+        await expect(engine.detectNoise()).rejects.toMatchObject({ reason: 'no-input' });
+      });
+
+      it('does not run alongside latency calibration', async () => {
+        await engine.start();
+        const calibration = engine.calibrateLatency();
+
+        await expect(engine.detectNoise()).rejects.toThrow('A measurement is already running');
+        engine.cancelCalibration();
+        await expect(calibration).rejects.toMatchObject({ reason: 'cancelled' });
+      });
     });
   });
 

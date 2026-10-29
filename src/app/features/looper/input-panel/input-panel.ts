@@ -6,12 +6,14 @@ import { AudioEngine, MAX_LATENCY_OFFSET_MS } from '../audio/audio-engine';
 import { AUDIO_ERROR_MESSAGES } from '../audio/audio-errors';
 import { CALIBRATION_FAILURE_MESSAGES, CalibrationError } from '../audio/latency-calibration';
 import { isClipping, toMeterLevel } from '../audio/level';
+import { fromDecibels } from '../audio/noise-gate';
 import { LooperStore } from '../looper-store';
+import { NoiseGate } from '../noise-gate/noise-gate';
 
 const CALIBRATING_MESSAGE = 'Listening for the test clicks…';
 
 @Component({
-  imports: [LevelMeter, ToggleSwitch],
+  imports: [LevelMeter, NoiseGate, ToggleSwitch],
   selector: 'app-input-panel',
   styleUrl: './input-panel.scss',
   templateUrl: './input-panel.html',
@@ -36,6 +38,17 @@ export class InputPanel {
   protected readonly gainPercent = computed(() => Math.round(this.inputGain() * 100));
   protected readonly meterLevel = computed(() => toMeterLevel(this.#engine.inputLevel().peak));
   protected readonly isInputClipping = computed(() => isClipping(this.#engine.inputLevel().peak));
+  // The meter reads after the input gain, so the threshold is shown there too.
+  protected readonly gateMarker = computed(() => {
+    const decibels = this.#engine.gateThresholdDb();
+    return decibels === null ? null : toMeterLevel(fromDecibels(decibels) * this.inputGain());
+  });
+  protected readonly isGateClosed = computed(
+    () => this.#engine.gateThresholdDb() !== null && !this.#engine.isGateOpen(),
+  );
+  protected readonly isGainDisabled = computed(
+    () => !this.isRunning() || this.#engine.isDetectingNoise(),
+  );
   protected readonly errorMessage = computed(() => {
     const error = this.#engine.error();
     return error ? AUDIO_ERROR_MESSAGES[error] : '';
@@ -45,7 +58,7 @@ export class InputPanel {
   );
   // Calibration would record the clicks into a take, so it waits for recording to finish.
   protected readonly calibrationBlockedReason = computed(() => {
-    if (!this.isRunning() || this.isCalibrating()) {
+    if (!this.isRunning() || this.#engine.isMeasuring()) {
       return '';
     }
     if (!this.#engine.isInputConnected()) {
@@ -57,6 +70,7 @@ export class InputPanel {
     () =>
       this.isRunning() &&
       !this.#engine.isSuspended() &&
+      !this.#engine.isDetectingNoise() &&
       (this.isCalibrating() || this.calibrationBlockedReason() === ''),
   );
   protected readonly calibrationButtonLabel = computed(() =>

@@ -37,7 +37,7 @@ export class LooperPage {
   protected readonly isAudioStarting = computed(() => this.#engine.status() === 'starting');
   // While suspended the audio clock is frozen, so nothing could be scheduled in time.
   protected readonly areFootswitchesDisabled = computed(
-    () => !this.isAudioRunning() || this.isSuspended() || this.#engine.isCalibrating(),
+    () => !this.isAudioRunning() || this.isSuspended() || this.#engine.isMeasuring(),
   );
   protected readonly startButtonLabel = computed(() =>
     this.isAudioStarting() ? 'Starting…' : 'Enable audio',

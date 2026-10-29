@@ -31,12 +31,20 @@
       max="2"
       step="0.01"
       [value]="inputGain()"
-      [disabled]="!isRunning()"
+      [disabled]="isGainDisabled()"
       (input)="setInputGain(gainSlider.valueAsNumber)"
     />
   </div>
 
-  <app-level-meter label="Input level" [value]="meterLevel()" [isClipping]="isInputClipping()" />
+  <app-level-meter
+    label="Input level"
+    [value]="meterLevel()"
+    [isClipping]="isInputClipping()"
+    [marker]="gateMarker()"
+    [isDimmed]="isGateClosed()"
+  />
+
+  <app-noise-gate />
 
   <app-toggle-switch
     label="Monitor"

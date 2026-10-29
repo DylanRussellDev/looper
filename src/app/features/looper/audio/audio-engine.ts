@@ -12,6 +12,13 @@ import {
   measureClickLatency,
 } from './latency-calibration';
 import { getLoopOffsetFrames, toFrames, toFramesCeil } from './loop-timing';
+import {
+  DetectedNoise,
+  NOISE_DETECTION_SECONDS,
+  NoiseDetectionError,
+  fromDecibels,
+  getThresholdFromNoise,
+} from './noise-gate';
 import { RecorderCommand, RecorderEvent, RecorderOptions } from './recorder-messages';
 
 const RECORDER_PROCESSOR_URL = 'worklets/recorder-processor.js';
@@ -38,6 +45,14 @@ const DEFAULT_INPUT_GAIN = 1;
 export const MAX_LATENCY_OFFSET_MS = 500;
 // Leaves time to schedule the first calibration click before it is due.
 const CALIBRATION_LEAD_IN_SECONDS = 0.1;
+// Noise gate timing, fixed at values that suit guitar: it opens fast enough to keep the
+// pick attack, holds through short dips, and fades out slowly enough to keep a note's tail.
+const GATE_ATTACK_SECONDS = 0.001;
+const GATE_HOLD_SECONDS = 0.05;
+const GATE_RELEASE_SECONDS = 0.1;
+// Noise detection starts listening after this, once muted loops have died away (including
+// any still on their way through the speakers and back into a mic).
+const NOISE_DETECTION_LEAD_IN_SECONDS = 0.25;
 
 export type AudioEngineStatus = 'idle' | 'starting' | 'running';
 
@@ -74,11 +89,17 @@ export interface SegmentFades {
   fadeOut: boolean;
 }
 
-interface Calibration {
+type MeasurementAbortReason = Extract<CalibrationFailure, 'cancelled' | 'input-lost'>;
+
+/**
+ * Latency calibration or noise detection: records the input while loops and monitor are
+ * muted and the gate is bypassed. Only one runs at a time.
+ */
+interface Measurement {
   takeId: number;
-  output: GainNode;
-  sources: AudioBufferSourceNode[];
-  abortReason: CalibrationFailure | undefined;
+  abortReason: MeasurementAbortReason | undefined;
+  /** Releases anything the measurement started, e.g. the calibration clicks. */
+  cleanUp: () => void;
 }
 
 interface AudioGraph {
@@ -136,8 +157,8 @@ interface Take {
  * loop playback. It knows nothing about looper rules; LooperStore drives it.
  *
  * Signal flow:
- *   mic/interface -> source -> inputGain -+-> recorder worklet (records + meters)
- *                                         +-> monitorGain -> speakers
+ *   mic/interface -> source -> inputGain -> recorder worklet -> monitorGain -> speakers
+ *   (the worklet meters the input, gates it, records the gated audio and outputs it)
  *   loop buffers -> part gain -> voice fade -> track volume -> loopBus -> speakers
  */
 @Service()
@@ -155,6 +176,9 @@ export class AudioEngine implements OnDestroy {
   readonly #latencyOffsetMs = signal(0);
   readonly #reportedOutputLatencyMs = signal<number | null>(null);
   readonly #isCalibrating = signal(false);
+  readonly #isDetectingNoise = signal(false);
+  readonly #gateThresholdDb = signal<number | null>(null);
+  readonly #isGateOpen = signal(true);
   readonly #isSuspended = signal(false);
   readonly #inputInterrupted = new Subject<void>();
   readonly #recordingStarted = new Subject<RecordingStarted>();
@@ -171,6 +195,13 @@ export class AudioEngine implements OnDestroy {
   /** What the browser says its own output path adds; a starting point for the offset. */
   readonly reportedOutputLatencyMs = this.#reportedOutputLatencyMs.asReadonly();
   readonly isCalibrating = this.#isCalibrating.asReadonly();
+  readonly isDetectingNoise = this.#isDetectingNoise.asReadonly();
+  /** Calibrating or detecting noise: loops are muted and the input is being measured. */
+  readonly isMeasuring = computed(() => this.#isCalibrating() || this.#isDetectingNoise());
+  /** Noise gate threshold in dBFS, before the input gain; null when the gate is off. */
+  readonly gateThresholdDb = this.#gateThresholdDb.asReadonly();
+  /** Whether the gate let anything through lately; always true while it is off. */
+  readonly isGateOpen = this.#isGateOpen.asReadonly();
   /** The browser or OS paused audio (e.g. the output device changed); the clock is stopped. */
   readonly isSuspended = this.#isSuspended.asReadonly();
   readonly isBuiltInMicSelected = computed(() => {
@@ -189,7 +220,7 @@ export class AudioEngine implements OnDestroy {
   readonly #trackIdToPlayback = new Map<number, TrackPlayback>();
   readonly #takeIdToTake = new Map<number, Take>();
   #lastTakeId = 0;
-  #calibration: Calibration | undefined;
+  #measurement: Measurement | undefined;
 
   /** Must be called from a user gesture: browsers only let audio start after one. */
   async start(): Promise<void> {
@@ -211,6 +242,7 @@ export class AudioEngine implements OnDestroy {
       // resume() is called before any await so it still counts as part of the click.
       await Promise.all([context.resume(), context.audioWorklet.addModule(RECORDER_PROCESSOR_URL)]);
       this.#graph = this.#createGraph(context);
+      this.#applyGateThreshold();
     } catch {
       void context?.close();
       this.#status.set('idle');
@@ -232,7 +264,7 @@ export class AudioEngine implements OnDestroy {
       return;
     }
     // Any take in progress would mix two devices, so it is discarded before the switch.
-    this.#abortCalibration('input-lost');
+    this.#abortMeasurement('input-lost');
     this.#inputInterrupted.next();
     await this.#connectInput(deviceId);
   }
@@ -258,12 +290,19 @@ export class AudioEngine implements OnDestroy {
     if (this.#graph) {
       this.#rampGain(this.#graph.inputGain, gain);
     }
+    this.#applyGateThreshold();
+  }
+
+  /** Sets the noise gate threshold in dBFS (before the input gain), or null to turn it off. */
+  setGateThreshold(decibels: number | null): void {
+    this.#gateThresholdDb.set(decibels);
+    this.#applyGateThreshold();
   }
 
   setMonitorEnabled(isEnabled: boolean): void {
     this.#isMonitorEnabled.set(isEnabled);
-    // Calibration keeps the monitor muted; the new setting applies once it finishes.
-    if (this.#graph && !this.#calibration) {
+    // Measuring keeps the monitor muted; the new setting applies once it finishes.
+    if (this.#graph && !this.#measurement) {
       this.#rampGain(this.#graph.monitorGain, isEnabled ? 1 : 0);
     }
   }
@@ -294,8 +333,8 @@ export class AudioEngine implements OnDestroy {
    */
   async calibrateLatency(): Promise<number> {
     const graph = this.#requireGraph();
-    if (this.#calibration) {
-      throw new Error('Calibration is already running');
+    if (this.#measurement) {
+      throw new Error('A measurement is already running');
     }
     if (!this.#isInputConnected()) {
       throw new CalibrationError('no-input');
@@ -317,7 +356,7 @@ export class AudioEngine implements OnDestroy {
     // Each click is searched for over the longest offset the setting allows.
     const windowFrames = toFrames(MAX_LATENCY_OFFSET_MS / 1000, sampleRate);
 
-    // Straight to the speakers: the loop bus and monitor are muted below.
+    // Straight to the speakers: the loop bus and monitor are muted meanwhile.
     const output = context.createGain();
     output.connect(context.destination);
     const sources = clickOffsets.map((offset) => {
@@ -327,19 +366,20 @@ export class AudioEngine implements OnDestroy {
       source.start((firstClickFrame + offset) / sampleRate);
       return source;
     });
-    this.#rampGain(graph.monitorGain, 0);
-    this.#rampGain(graph.loopBus, 0);
-
-    // Recorded on the raw audio clock: no latency offset, since that's what is measured.
-    const takeId = this.#startTake(firstClickFrame, 'segment', 0);
-    const calibration: Calibration = { takeId, output, sources, abortReason: undefined };
-    this.#calibration = calibration;
+    const measurement = this.#beginMeasurement(firstClickFrame, () => {
+      for (const source of sources) {
+        source.stop();
+        source.disconnect();
+      }
+      output.disconnect();
+      this.#isCalibrating.set(false);
+    });
     this.#isCalibrating.set(true);
 
     try {
       const lastClickOffset = clickOffsets.at(-1) ?? 0;
       const take = await this.stopRecording(
-        takeId,
+        measurement.takeId,
         firstClickFrame + lastClickOffset + windowFrames,
       );
       const result = measureClickLatency(
@@ -356,14 +396,64 @@ export class AudioEngine implements OnDestroy {
     } catch (error) {
       throw error instanceof CalibrationError
         ? error
-        : new CalibrationError(calibration.abortReason ?? 'cancelled');
+        : new CalibrationError(measurement.abortReason ?? 'cancelled');
     } finally {
-      this.#finishCalibration(calibration);
+      this.#finishMeasurement(measurement);
     }
   }
 
   cancelCalibration(): void {
-    this.#abortCalibration('cancelled');
+    if (this.#isCalibrating()) {
+      this.#abortMeasurement('cancelled');
+    }
+  }
+
+  /**
+   * Listens to the input for a couple of seconds and sets the gate threshold just above
+   * the loudest noise heard, so the player must stay quiet meanwhile. Loops keep running
+   * in time but are muted, as is the monitor, so they aren't measured as noise. Resolves
+   * to what was heard and the threshold set; rejects with a NoiseDetectionError.
+   */
+  async detectNoise(): Promise<DetectedNoise> {
+    const graph = this.#requireGraph();
+    if (this.#measurement) {
+      throw new Error('A measurement is already running');
+    }
+    if (!this.#isInputConnected()) {
+      throw new NoiseDetectionError('no-input');
+    }
+    const { sampleRate } = graph.context;
+    const startFrame =
+      this.getCurrentFrame() + toFrames(NOISE_DETECTION_LEAD_IN_SECONDS, sampleRate);
+    const measurement = this.#beginMeasurement(startFrame, () => this.#isDetectingNoise.set(false));
+    this.#isDetectingNoise.set(true);
+    // The gain at the start: changing it midway would skew the result, so the UI locks it.
+    const inputGain = this.#inputGain();
+
+    try {
+      const take = await this.stopRecording(
+        measurement.takeId,
+        startFrame + toFrames(NOISE_DETECTION_SECONDS, sampleRate),
+      );
+      const result = getThresholdFromNoise(take.buffer.getChannelData(0), inputGain);
+      if ('failure' in result) {
+        throw new NoiseDetectionError(result.failure);
+      }
+      this.setGateThreshold(result.thresholdDb);
+      return result;
+    } catch (error) {
+      throw error instanceof NoiseDetectionError
+        ? error
+        : new NoiseDetectionError(measurement.abortReason ?? 'cancelled');
+    } finally {
+      this.#finishMeasurement(measurement);
+    }
+  }
+
+  cancelNoiseDetection(): void {
+    if (this.#isDetectingNoise()) {
+      this.#abortMeasurement('cancelled');
+    }
   }
 
   getSampleRate(): number {
@@ -605,7 +695,7 @@ export class AudioEngine implements OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.#abortCalibration('cancelled');
+    this.#abortMeasurement('cancelled');
     for (const playback of this.#trackIdToPlayback.values()) {
       if (playback.voice) {
         this.#disconnectParts([...playback.voice.layerIdToParts.values()].flat());
@@ -651,13 +741,18 @@ export class AudioEngine implements OnDestroy {
 
     const loopBus = context.createGain();
 
+    const { sampleRate } = context;
     const recorderOptions: RecorderOptions = {
       chunkFrames: RECORDER_CHUNK_FRAMES,
-      historyFrames: Math.round(context.sampleRate * RECORDER_HISTORY_SECONDS),
-      levelIntervalFrames: Math.round(context.sampleRate / LEVEL_UPDATES_PER_SECOND),
+      historyFrames: Math.round(sampleRate * RECORDER_HISTORY_SECONDS),
+      levelIntervalFrames: Math.round(sampleRate / LEVEL_UPDATES_PER_SECOND),
+      gateAttackFrames: Math.max(1, toFrames(GATE_ATTACK_SECONDS, sampleRate)),
+      gateHoldFrames: toFrames(GATE_HOLD_SECONDS, sampleRate),
+      gateReleaseFrames: Math.max(1, toFrames(GATE_RELEASE_SECONDS, sampleRate)),
     };
-    // The recorder outputs silence, but it is still wired to the destination: Chrome only
-    // runs nodes the destination "pulls" on, so this keeps process() being called.
+    // The recorder outputs the gated input, which feeds the monitor. That path to the
+    // destination matters even while the monitor is muted: Chrome only runs nodes the
+    // destination "pulls" on, so it keeps process() being called.
     const recorder = new AudioWorkletNode(context, RECORDER_PROCESSOR_NAME, {
       numberOfInputs: 1,
       numberOfOutputs: 1,
@@ -669,9 +764,8 @@ export class AudioEngine implements OnDestroy {
     recorder.onprocessorerror = () => this.#handleRecorderFailure();
 
     inputGain.connect(recorder);
-    inputGain.connect(monitorGain);
+    recorder.connect(monitorGain);
     monitorGain.connect(context.destination);
-    recorder.connect(context.destination);
     loopBus.connect(context.destination);
 
     return { context, inputGain, monitorGain, loopBus, recorder };
@@ -737,7 +831,7 @@ export class AudioEngine implements OnDestroy {
     }
     this.#disconnectInput();
     this.#error.set('device-unplugged');
-    this.#abortCalibration('input-lost');
+    this.#abortMeasurement('input-lost');
     this.#inputInterrupted.next();
     void this.#refreshDevices();
   }
@@ -748,7 +842,7 @@ export class AudioEngine implements OnDestroy {
    */
   #handleRecorderFailure(): void {
     this.#error.set('recorder-failed');
-    this.#abortCalibration('input-lost');
+    this.#abortMeasurement('input-lost');
     this.#inputInterrupted.next();
     for (const [takeId, take] of this.#takeIdToTake) {
       this.#takeIdToTake.delete(takeId);
@@ -756,27 +850,53 @@ export class AudioEngine implements OnDestroy {
     }
   }
 
-  #abortCalibration(reason: CalibrationFailure): void {
-    const calibration = this.#calibration;
-    if (!calibration || calibration.abortReason) {
-      return;
-    }
-    calibration.abortReason = reason;
-    this.cancelRecording(calibration.takeId);
+  /**
+   * Mutes loops and monitor, bypasses the gate (the raw input is what is measured), and
+   * records from `startFrame` on the raw audio clock, with no latency offset.
+   */
+  #beginMeasurement(startFrame: number, cleanUp: () => void): Measurement {
+    const graph = this.#requireGraph();
+    this.#rampGain(graph.monitorGain, 0);
+    this.#rampGain(graph.loopBus, 0);
+    const measurement: Measurement = {
+      takeId: this.#startTake(startFrame, 'segment', 0),
+      abortReason: undefined,
+      cleanUp,
+    };
+    this.#measurement = measurement;
+    this.#applyGateThreshold();
+    return measurement;
   }
 
-  #finishCalibration(calibration: Calibration): void {
-    for (const source of calibration.sources) {
-      source.stop();
-      source.disconnect();
+  #abortMeasurement(reason: MeasurementAbortReason): void {
+    const measurement = this.#measurement;
+    if (!measurement || measurement.abortReason) {
+      return;
     }
-    calibration.output.disconnect();
-    this.#calibration = undefined;
-    this.#isCalibrating.set(false);
+    measurement.abortReason = reason;
+    this.cancelRecording(measurement.takeId);
+  }
+
+  #finishMeasurement(measurement: Measurement): void {
+    measurement.cleanUp();
+    this.#measurement = undefined;
+    this.#applyGateThreshold();
     if (this.#graph) {
       this.#rampGain(this.#graph.monitorGain, this.#isMonitorEnabled() ? 1 : 0);
       this.#rampGain(this.#graph.loopBus, 1);
     }
+  }
+
+  /**
+   * The worklet sees the input after the gain, so the threshold is scaled by the gain to
+   * keep comparing the signal before it: the threshold keeps matching the noise however
+   * the gain is set. (At a gain of 0 the threshold is 0, "off", but nothing gets through.)
+   */
+  #applyGateThreshold(): void {
+    const decibels = this.#gateThresholdDb();
+    const isBypassed = decibels === null || this.#measurement !== undefined;
+    const threshold = isBypassed ? 0 : fromDecibels(decibels) * this.#inputGain();
+    this.#postToRecorder({ type: 'gate', threshold });
   }
 
   readonly #refreshDevicesOnChange = (): void => {
@@ -820,6 +940,7 @@ export class AudioEngine implements OnDestroy {
     switch (event.type) {
       case 'level':
         this.#inputLevel.set({ peak: event.peak, rms: event.rms });
+        this.#isGateOpen.set(event.isGateOpen);
         break;
       case 'started': {
         const take = this.#takeIdToTake.get(event.takeId);

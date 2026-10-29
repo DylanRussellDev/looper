@@ -1,0 +1,43 @@
+<div class="field">
+  <label for="gate-threshold">
+    Noise gate <output for="gate-threshold">{{ thresholdLabel() }}</output>
+  </label>
+  <input
+    #thresholdSlider
+    id="gate-threshold"
+    type="range"
+    step="1"
+    aria-describedby="gate-threshold-hint"
+    [min]="offPosition"
+    [max]="maxThresholdDb"
+    [value]="sliderPosition()"
+    [attr.aria-valuetext]="thresholdLabel()"
+    [disabled]="isSliderDisabled()"
+    (input)="setThreshold(thresholdSlider.valueAsNumber)"
+  />
+  <p id="gate-threshold-hint" class="hint">
+    Silences the input while it is quieter than this, so hum and hiss between notes aren't heard or
+    recorded. The line on the input meter shows where it sits. All the way left turns it off.
+  </p>
+</div>
+
+<div class="detection">
+  <button
+    type="button"
+    class="detect-button"
+    aria-describedby="noise-detection-hint"
+    [class.is-active]="isDetecting()"
+    [disabled]="!canDetect()"
+    (click)="toggleDetection()"
+  >
+    {{ detectButtonLabel() }}
+  </button>
+  <p id="noise-detection-hint" class="hint">
+    Sets the gate for you: stay quiet for {{ detectionSeconds }} seconds while it listens to your
+    noise. Loops are muted while it listens; Esc cancels.
+    {{ detectionBlockedReason() }}
+  </p>
+  <p class="detection-status" role="status" [class.is-error]="isDetectionFailed()">
+    {{ detectionMessage() }}
+  </p>
+</div>

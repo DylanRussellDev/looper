@@ -16,6 +16,10 @@ export interface AudioProbe {
   unplugInput(): void;
   /** Suspends audio, as the browser or OS does when e.g. the output device changes. */
   suspendAudio(): Promise<void>;
+  /** With syntheticInputDb: changes the input tone's level. */
+  setInputLevel(decibels: number): void;
+  /** With syntheticInputDb: the loudest sample sent to the speakers over `durationMs`. */
+  getOutputPeak(durationMs: number): Promise<number>;
 }
 
 export interface AudioProbeOptions {
@@ -26,6 +30,11 @@ export interface AudioProbeOptions {
    * from the output back to the input, with a known round-trip latency.
    */
   loopbackLatencyMs?: number;
+  /**
+   * Replace the input with a steady tone peaking at this level (dBFS), changeable with
+   * setInputLevel, and watch what reaches the speakers with getOutputPeak.
+   */
+  syntheticInputDb?: number;
 }
 
 declare global {
@@ -47,6 +56,8 @@ export function installAudioProbe(options: AudioProbeOptions): void {
     suspendAudio: async () => {
       await Promise.all(contexts.map((context) => context.suspend()));
     },
+    setInputLevel: () => undefined,
+    getOutputPeak: async () => 0,
   };
   window.audioProbe = probe;
 
@@ -60,17 +71,93 @@ export function installAudioProbe(options: AudioProbeOptions): void {
 
   if (options.loopbackLatencyMs !== undefined) {
     installLoopback(options.loopbackLatencyMs / 1000);
+  } else if (options.syntheticInputDb !== undefined) {
+    installSyntheticInput(options.syntheticInputDb);
   }
 
-  // Everything connected to the speakers is also fed into a delay, and the delay's output
-  // is what the app gets as its input source.
-  function installLoopback(delaySeconds: number): void {
-    const originalConnect = AudioNode.prototype.connect as (
+  function getOriginalConnect() {
+    return AudioNode.prototype.connect as (
       this: AudioNode,
       destination: AudioNode,
       output?: number,
       input?: number,
     ) => AudioNode;
+  }
+
+  // The input is a sine whose level the test sets; everything connected to the speakers
+  // is also fed into an analyser, so the test can read what the player would hear.
+  function installSyntheticInput(initialDb: number): void {
+    const originalConnect = getOriginalConnect();
+    const toAmplitude = (decibels: number) => 10 ** (decibels / 20);
+    const levels: GainNode[] = [];
+    const contextToAnalyser = new WeakMap<BaseAudioContext, AnalyserNode>();
+    const analysers: AnalyserNode[] = [];
+    let level = toAmplitude(initialDb);
+
+    const getAnalyser = (context: BaseAudioContext): AnalyserNode => {
+      let analyser = contextToAnalyser.get(context);
+      if (!analyser) {
+        analyser = new AnalyserNode(context, { fftSize: 2048 });
+        contextToAnalyser.set(context, analyser);
+        analysers.push(analyser);
+      }
+      return analyser;
+    };
+
+    AudioNode.prototype.connect = function (
+      this: AudioNode,
+      destination: AudioNode,
+      output?: number,
+      input?: number,
+    ): AudioNode {
+      const result = originalConnect.call(this, destination, output, input);
+      if (destination instanceof AudioDestinationNode) {
+        originalConnect.call(this, getAnalyser(this.context));
+      }
+      return result;
+    } as typeof AudioNode.prototype.connect;
+
+    AudioContext.prototype.createMediaStreamSource = function (
+      this: AudioContext,
+    ): MediaStreamAudioSourceNode {
+      const tone = new OscillatorNode(this, { frequency: 220 });
+      const gain = new GainNode(this, { gain: level });
+      originalConnect.call(tone, gain);
+      tone.start();
+      levels.push(gain);
+      return gain as unknown as MediaStreamAudioSourceNode;
+    };
+
+    probe.setInputLevel = (decibels) => {
+      level = toAmplitude(decibels);
+      for (const gain of levels) {
+        gain.gain.value = level;
+      }
+    };
+    probe.getOutputPeak = (durationMs) =>
+      new Promise((resolve) => {
+        const samples = new Float32Array(2048);
+        let peak = 0;
+        // The analyser holds the last 2048 frames (~43 ms), so reading every 20 ms sees all.
+        const timer = setInterval(() => {
+          for (const analyser of analysers) {
+            analyser.getFloatTimeDomainData(samples);
+            for (const sample of samples) {
+              peak = Math.max(peak, Math.abs(sample));
+            }
+          }
+        }, 20);
+        setTimeout(() => {
+          clearInterval(timer);
+          resolve(peak);
+        }, durationMs);
+      });
+  }
+
+  // Everything connected to the speakers is also fed into a delay, and the delay's output
+  // is what the app gets as its input source.
+  function installLoopback(delaySeconds: number): void {
+    const originalConnect = getOriginalConnect();
     const contextToLoopback = new WeakMap<BaseAudioContext, DelayNode>();
     const getLoopback = (context: BaseAudioContext): DelayNode => {
       let loopback = contextToLoopback.get(context);

@@ -14,6 +14,23 @@
   gap: 0.5rem;
 }
 
+.scale {
+  position: relative;
+  display: flex;
+  flex: 1;
+}
+
+.marker {
+  position: absolute;
+  inset-block: -0.1875rem;
+  inset-inline-start: calc(var(--marker-position) * 100%);
+  inline-size: 2px;
+  margin-inline-start: -1px;
+  border-radius: 1px;
+  background: var(--app-color-text);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 60%);
+}
+
 // Chromium-only styling hooks for <meter>; the app targets Chrome and Edge.
 meter {
   appearance: none;
@@ -22,6 +39,11 @@ meter {
   border-radius: 999px;
   background: var(--app-color-inset);
   box-shadow: inset 0 1px 3px rgb(0 0 0 / 60%);
+  transition: opacity 120ms ease-out;
+
+  &.is-dimmed {
+    opacity: 0.4;
+  }
 
   &::-webkit-meter-bar {
     border: none;

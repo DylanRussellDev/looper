@@ -26,6 +26,9 @@ export class Pedal {
   readonly calibrationStatus: Locator;
   readonly loopPosition: Locator;
   readonly suspendedAlert: Locator;
+  readonly gateThreshold: Locator;
+  readonly detectNoiseButton: Locator;
+  readonly noiseDetectionStatus: Locator;
 
   constructor(readonly page: Page) {
     this.enableAudioButton = page.getByRole('button', { name: 'Enable audio' });
@@ -42,6 +45,9 @@ export class Pedal {
     this.calibrationStatus = page.locator('.calibration-status');
     this.loopPosition = page.locator('app-loop-position');
     this.suspendedAlert = page.locator('.suspended');
+    this.gateThreshold = page.getByLabel('Noise gate');
+    this.detectNoiseButton = page.locator('.detect-button');
+    this.noiseDetectionStatus = page.locator('.detection-status');
   }
 
   volume(trackId: number): Locator {
@@ -139,6 +145,14 @@ export class Pedal {
   async waitForStarts(count: number): Promise<ScheduledStart[]> {
     await expect.poll(async () => (await this.getStarts()).length).toBeGreaterThanOrEqual(count);
     return this.getStarts();
+  }
+
+  async setInputLevel(decibels: number): Promise<void> {
+    await this.page.evaluate((level) => window.audioProbe.setInputLevel(level), decibels);
+  }
+
+  async getOutputPeak(durationMs: number): Promise<number> {
+    return this.page.evaluate((duration) => window.audioProbe.getOutputPeak(duration), durationMs);
   }
 
   async unplugInput(): Promise<void> {

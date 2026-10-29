@@ -13,6 +13,11 @@ export class LevelMeter {
   /** Meter position, 0..1. */
   readonly value = input.required<number>();
   readonly isClipping = input(false);
+  /** Position of a threshold line, 0..1, or null for none. Visual only: the control that
+   * sets the threshold describes it. */
+  readonly marker = input<number | null>(null);
+  /** Fades the bar, e.g. while a gate is holding the signal back. */
+  readonly isDimmed = input(false);
 
   protected readonly labelId = `level-meter-label-${nextLevelMeterId++}`;
 }
