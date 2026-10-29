@@ -1,0 +1,48 @@
+:host {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ring {
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  border-radius: 50%;
+  background: var(--app-color-inset);
+  box-shadow: inset 0 2px 5px rgb(0 0 0 / 70%);
+
+  svg {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+    // Starts at twelve o'clock and sweeps clockwise.
+    rotate: -90deg;
+  }
+}
+
+circle {
+  fill: none;
+  stroke-width: 9;
+}
+
+.groove {
+  stroke: #2a2e33;
+}
+
+// A dash as long as the circle (pathLength 1), pulled back by the part still to come.
+.sweep {
+  stroke: var(--app-color-led-green);
+  stroke-dasharray: 1;
+  opacity: 0;
+
+  .is-running & {
+    opacity: 1;
+  }
+}
+
+.length {
+  margin: 0;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--app-color-text-muted);
+}

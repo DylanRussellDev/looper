@@ -1,0 +1,10 @@
+<input
+  #checkbox
+  type="checkbox"
+  role="switch"
+  [id]="inputId"
+  [checked]="checked()"
+  [disabled]="disabled()"
+  (change)="setChecked(checkbox.checked)"
+/>
+<label [for]="inputId">{{ label() }}</label>

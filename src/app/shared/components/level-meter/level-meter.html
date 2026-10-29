@@ -1,0 +1,18 @@
+<span class="label" [id]="labelId">{{ label() }}</span>
+<div class="row">
+  <meter
+    min="0"
+    max="1"
+    low="0.75"
+    high="0.92"
+    optimum="0.5"
+    [value]="value()"
+    [attr.aria-labelledby]="labelId"
+  ></meter>
+  <span class="clip" [class.is-active]="isClipping()">
+    Clip
+    @if (isClipping()) {
+      <span class="visually-hidden">detected</span>
+    }
+  </span>
+</div>

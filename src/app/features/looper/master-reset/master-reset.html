@@ -1,0 +1,12 @@
+<button
+  type="button"
+  class="master-reset"
+  [class.is-armed]="isArmed()"
+  [disabled]="disabled()"
+  (click)="press()"
+  (blur)="disarm()"
+  (keydown.escape)="disarm()"
+>
+  {{ label() }}
+</button>
+<span class="visually-hidden" role="status">{{ statusMessage() }}</span>

@@ -1,0 +1,37 @@
+// Static palette. Components read the --app-* custom properties below, never these
+// variables directly, so the theme can change at runtime later without a rebuild.
+$page: #101113;
+$enclosure-top: #34383d;
+$enclosure-bottom: #202326;
+$inset: #15171a;
+$border: #50555c;
+$text: #eceef1;
+$text-muted: #b3b8bf;
+$led-red: #ff453a;
+$led-green: #32d74b;
+$led-green-dim: #1d4d27;
+$led-orange: #ff9f0a;
+$on-led: #0b0c0d;
+$focus: #64b5ff;
+$warning: #ffd479;
+$error: #ff8a80;
+
+:root {
+  color-scheme: dark;
+
+  --app-color-page: #{$page};
+  --app-color-enclosure-top: #{$enclosure-top};
+  --app-color-enclosure-bottom: #{$enclosure-bottom};
+  --app-color-inset: #{$inset};
+  --app-color-border: #{$border};
+  --app-color-text: #{$text};
+  --app-color-text-muted: #{$text-muted};
+  --app-color-led-red: #{$led-red};
+  --app-color-led-green: #{$led-green};
+  --app-color-led-green-dim: #{$led-green-dim};
+  --app-color-led-orange: #{$led-orange};
+  --app-color-on-led: #{$on-led};
+  --app-color-focus: #{$focus};
+  --app-color-warning: #{$warning};
+  --app-color-error: #{$error};
+}

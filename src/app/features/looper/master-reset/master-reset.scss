@@ -1,0 +1,46 @@
+:host {
+  display: inline-block;
+}
+
+// Recessed into the enclosure with a red accent, so it reads as "dangerous" and is
+// hard to hit by accident.
+.master-reset {
+  min-inline-size: 9.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--app-color-led-red);
+  background: var(--app-color-inset);
+  color: var(--app-color-error);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: inset 0 2px 5px rgb(0 0 0 / 70%);
+
+  &.is-armed {
+    background: var(--app-color-led-red);
+    color: var(--app-color-on-led);
+    animation: flash 0.6s ease-in-out infinite alternate;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+  }
+
+  &:focus-visible {
+    outline: 3px solid var(--app-color-focus);
+    outline-offset: 2px;
+  }
+}
+
+@keyframes flash {
+  to {
+    background: #ff8f87;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .master-reset.is-armed {
+    animation: none;
+  }
+}

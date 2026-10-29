@@ -1,0 +1,29 @@
+<button
+  type="button"
+  class="footswitch"
+  [attr.data-state]="state()"
+  [class.is-pressed]="isPressed()"
+  [class.is-selected]="isSelected()"
+  [disabled]="disabled()"
+  [attr.aria-describedby]="describedBy()"
+  [attr.aria-keyshortcuts]="shortcutKey()"
+  (pointerdown)="pressPointer($event)"
+  (pointerup)="release()"
+  (pointercancel)="cancel()"
+  (keydown.space)="pressKey($event)"
+  (keydown.enter)="pressKey($event)"
+  (keyup.space)="release()"
+  (keyup.enter)="release()"
+  (blur)="cancel()"
+  (contextmenu)="$event.preventDefault()"
+>
+  <span class="led" aria-hidden="true"></span>
+  <span class="name">Track {{ trackId() }}</span>
+  <span class="state">{{ stateLabel() }}</span>
+  @if (shortcutKey(); as key) {
+    <kbd class="keycap" aria-hidden="true">{{ key }}</kbd>
+  }
+  @if (isSelected()) {
+    <span class="selected-badge">Selected</span>
+  }
+</button>

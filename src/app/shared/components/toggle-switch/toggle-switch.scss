@@ -1,0 +1,59 @@
+:host {
+  --toggle-switch-width: 2.75rem;
+  --toggle-switch-height: 1.5rem;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+// The native checkbox stays in place (so it remains keyboard and screen-reader
+// accessible) and is restyled as a switch.
+input {
+  appearance: none;
+  position: relative;
+  margin: 0;
+  inline-size: var(--toggle-switch-width);
+  block-size: var(--toggle-switch-height);
+  border-radius: 999px;
+  background: var(--app-color-inset);
+  border: 1px solid var(--app-color-border);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset-block-start: 2px;
+    inset-inline-start: 2px;
+    inline-size: calc(var(--toggle-switch-height) - 6px);
+    block-size: calc(var(--toggle-switch-height) - 6px);
+    border-radius: 50%;
+    background: var(--app-color-text-muted);
+    transition: transform 120ms ease;
+  }
+
+  &:checked {
+    background: var(--app-color-led-green-dim);
+    border-color: var(--app-color-led-green);
+
+    &::after {
+      transform: translateX(calc(var(--toggle-switch-width) - var(--toggle-switch-height)));
+      background: var(--app-color-led-green);
+    }
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--app-color-focus);
+    outline-offset: 2px;
+  }
+}
+
+label {
+  cursor: pointer;
+}

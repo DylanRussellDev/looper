@@ -1,0 +1,14 @@
+<div class="ring" aria-hidden="true" [class.is-running]="progress() !== null">
+  <svg viewBox="0 0 100 100">
+    <circle class="groove" cx="50" cy="50" r="42" />
+    <circle
+      class="sweep"
+      cx="50"
+      cy="50"
+      r="42"
+      pathLength="1"
+      [attr.stroke-dashoffset]="dashOffset()"
+    />
+  </svg>
+</div>
+<p class="length">{{ lengthLabel() }}</p>
