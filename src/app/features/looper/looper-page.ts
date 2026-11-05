@@ -30,6 +30,7 @@ export class LooperPage {
   protected readonly lastTouchedTrackId = this.#store.lastTouchedTrackId;
   protected readonly canUndo = this.#store.canUndo;
   protected readonly canRedo = this.#store.canRedo;
+  protected readonly areLoopsMuted = this.#store.areLoopsMuted;
   protected readonly isSuspended = this.#engine.isSuspended;
   protected readonly historyTargetLabel = computed(() => {
     const trackId = this.lastTouchedTrackId();
@@ -69,11 +70,15 @@ export class LooperPage {
     this.#store.redo();
   }
 
+  protected toggleMuteAll(): void {
+    this.#store.toggleMuteAll();
+  }
+
   protected setTrackVolume(trackId: number, volume: number): void {
     this.#store.setTrackVolume(trackId, volume);
   }
 
-  /** Z, Y and I; the footswitches handle their own number keys. */
+  /** Z, Y, M and I; the footswitches handle their own number keys. */
   protected handleShortcut(event: KeyboardEvent): void {
     if (event.repeat || !isShortcutKeyEvent(event)) {
       return;
@@ -93,6 +98,9 @@ export class LooperPage {
         break;
       case 'y':
         this.redo();
+        break;
+      case 'm':
+        this.toggleMuteAll();
         break;
     }
   }

@@ -710,6 +710,25 @@ describe('AudioEngine', () => {
         expect(loopBus!.gain.setTargetAtTime).toHaveBeenLastCalledWith(1, 1, 0.01);
       });
 
+      it('keeps the loops muted afterwards when mute all was on', async () => {
+        await engine.start();
+        const loopBus = contexts[0]!.createGain.mock.results[2]!.value as ReturnType<
+          typeof createFakeNode
+        >;
+        engine.setLoopsMuted(true);
+
+        const result = engine.detectNoise();
+        // Unmuting mid-measurement waits until it finishes.
+        engine.setLoopsMuted(false);
+        engine.setLoopsMuted(true);
+        expect(loopBus.gain.setTargetAtTime).toHaveBeenLastCalledWith(0, 1, 0.01);
+        deliverNoise(fromDecibels(-60));
+        await result;
+
+        expect(loopBus.gain.setTargetAtTime).toHaveBeenLastCalledWith(0, 1, 0.01);
+        expect(loopBus.gain.setTargetAtTime).not.toHaveBeenCalledWith(1, 1, 0.01);
+      });
+
       it('leaves the threshold alone when the input was too loud to be noise', async () => {
         await engine.start();
         engine.setGateThreshold(-50);
@@ -761,6 +780,33 @@ describe('AudioEngine', () => {
         engine.cancelCalibration();
         await expect(calibration).rejects.toMatchObject({ reason: 'cancelled' });
       });
+    });
+  });
+
+  describe('mute all', () => {
+    const getLoopBus = () =>
+      contexts[0]!.createGain.mock.results[2]!.value as ReturnType<typeof createFakeNode>;
+
+    it('fades the loop bus out and back in, leaving the monitor alone', async () => {
+      await engine.start();
+      const monitorGain = contexts[0]!.createGain.mock.results[1]!.value as ReturnType<
+        typeof createFakeNode
+      >;
+      monitorGain.gain.setTargetAtTime.mockClear();
+
+      engine.setLoopsMuted(true);
+      expect(engine.areLoopsMuted()).toBe(true);
+      expect(getLoopBus().gain.setTargetAtTime).toHaveBeenLastCalledWith(0, 1, 0.01);
+      engine.setLoopsMuted(false);
+      expect(getLoopBus().gain.setTargetAtTime).toHaveBeenLastCalledWith(1, 1, 0.01);
+      expect(monitorGain.gain.setTargetAtTime).not.toHaveBeenCalled();
+    });
+
+    it('starts the loop bus silent when muted before audio starts', async () => {
+      engine.setLoopsMuted(true);
+      await engine.start();
+
+      expect(getLoopBus().gain.value).toBe(0);
     });
   });
 

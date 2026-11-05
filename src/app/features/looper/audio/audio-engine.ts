@@ -172,6 +172,7 @@ export class AudioEngine implements OnDestroy {
   readonly #isInputConnected = signal(false);
   readonly #inputGain = signal(DEFAULT_INPUT_GAIN);
   readonly #isMonitorEnabled = signal(true);
+  readonly #areLoopsMuted = signal(false);
   readonly #inputLevel = signal<InputLevel>({ peak: 0, rms: 0 });
   readonly #latencyOffsetMs = signal(0);
   readonly #reportedOutputLatencyMs = signal<number | null>(null);
@@ -190,6 +191,8 @@ export class AudioEngine implements OnDestroy {
   readonly isInputConnected = this.#isInputConnected.asReadonly();
   readonly inputGain = this.#inputGain.asReadonly();
   readonly isMonitorEnabled = this.#isMonitorEnabled.asReadonly();
+  /** Loop playback is silenced but keeps running, so unmuting comes back in time. */
+  readonly areLoopsMuted = this.#areLoopsMuted.asReadonly();
   readonly inputLevel = this.#inputLevel.asReadonly();
   readonly latencyOffsetMs = this.#latencyOffsetMs.asReadonly();
   /** What the browser says its own output path adds; a starting point for the offset. */
@@ -304,6 +307,15 @@ export class AudioEngine implements OnDestroy {
     // Measuring keeps the monitor muted; the new setting applies once it finishes.
     if (this.#graph && !this.#measurement) {
       this.#rampGain(this.#graph.monitorGain, isEnabled ? 1 : 0);
+    }
+  }
+
+  /** Silences or restores every loop at once; the input and monitor are untouched. */
+  setLoopsMuted(isMuted: boolean): void {
+    this.#areLoopsMuted.set(isMuted);
+    // Measuring keeps the loops muted; the new setting applies once it finishes.
+    if (this.#graph && !this.#measurement) {
+      this.#rampGain(this.#graph.loopBus, this.#getLoopBusGain());
     }
   }
 
@@ -740,6 +752,7 @@ export class AudioEngine implements OnDestroy {
     monitorGain.gain.value = this.#isMonitorEnabled() ? 1 : 0;
 
     const loopBus = context.createGain();
+    loopBus.gain.value = this.#getLoopBusGain();
 
     const { sampleRate } = context;
     const recorderOptions: RecorderOptions = {
@@ -883,7 +896,7 @@ export class AudioEngine implements OnDestroy {
     this.#applyGateThreshold();
     if (this.#graph) {
       this.#rampGain(this.#graph.monitorGain, this.#isMonitorEnabled() ? 1 : 0);
-      this.#rampGain(this.#graph.loopBus, 1);
+      this.#rampGain(this.#graph.loopBus, this.#getLoopBusGain());
     }
   }
 
@@ -1115,6 +1128,10 @@ export class AudioEngine implements OnDestroy {
     const playback: TrackPlayback = { gain, voice: undefined };
     this.#trackIdToPlayback.set(trackId, playback);
     return playback;
+  }
+
+  #getLoopBusGain(): number {
+    return this.#areLoopsMuted() ? 0 : 1;
   }
 
   #rampGain(node: GainNode, value: number): void {

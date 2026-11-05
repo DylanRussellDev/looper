@@ -30,6 +30,7 @@ export class Pedal {
   readonly detectNoiseButton: Locator;
   readonly noiseDetectionStatus: Locator;
   readonly collapseButton: Locator;
+  readonly muteButton: Locator;
 
   constructor(readonly page: Page) {
     this.enableAudioButton = page.getByRole('button', { name: 'Enable audio' });
@@ -50,6 +51,7 @@ export class Pedal {
     this.detectNoiseButton = page.locator('.detect-button');
     this.noiseDetectionStatus = page.locator('.detection-status');
     this.collapseButton = page.locator('.collapse-button');
+    this.muteButton = page.locator('.mute-button');
   }
 
   volume(trackId: number): Locator {

@@ -73,6 +73,16 @@
   }
 }
 
+// Muted: the loop runs on but is silent, so its LED goes dim and dashed (not colour alone).
+.is-muted {
+  --footswitch-glow: transparent;
+
+  .led {
+    border-style: dashed;
+    opacity: 0.6;
+  }
+}
+
 // LED ring around the switch. Off for Empty, dim for Stopped.
 .led {
   position: absolute;

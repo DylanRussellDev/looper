@@ -35,6 +35,18 @@ describe('Footswitch', () => {
     expect(button.dataset['state']).toBe('playing');
   });
 
+  it('dims a playing track while mute all is on, but not an empty one', async () => {
+    fixture.componentRef.setInput('isMuted', true);
+    await fixture.whenStable();
+    expect(button.classList).toContain('is-muted');
+    expect(button.textContent).toContain('Playing (muted)');
+
+    fixture.componentRef.setInput('state', 'empty');
+    await fixture.whenStable();
+    expect(button.classList).not.toContain('is-muted');
+    expect(button.textContent).not.toContain('(muted)');
+  });
+
   it('emits tap on a quick pointer press', () => {
     button.dispatchEvent(new MouseEvent('pointerdown', { button: 0 }));
     button.dispatchEvent(new MouseEvent('pointerup'));

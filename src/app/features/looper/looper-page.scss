@@ -185,7 +185,7 @@ kbd {
   gap: 0.75rem;
 }
 
-.history-button {
+.control-button {
   padding: 0.5rem 1.25rem;
   border-radius: 0.5rem;
   border: 1px solid var(--app-color-border);
@@ -201,6 +201,22 @@ kbd {
 
   &:disabled {
     opacity: 0.5;
+  }
+}
+
+.mute-button {
+  // Lit amber while muted, like a pedal's mute LED.
+  &.is-active {
+    border-color: var(--app-color-led-orange);
+    background: var(--app-color-led-orange);
+    color: var(--app-color-on-led);
+    box-shadow:
+      0 2px 0 #0b0c0d,
+      0 0 12px rgb(255 159 10 / 45%);
+
+    kbd {
+      color: var(--app-color-text);
+    }
   }
 }
 

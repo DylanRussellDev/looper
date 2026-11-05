@@ -39,7 +39,7 @@ Git: local repo on `main` with no remote.
 - Pure helpers: `audio/loop-timing.ts`, `level.ts`, `latency-calibration.ts`, `noise-gate.ts`,
   `audio-errors.ts`, `keyboard/shortcut-keys.ts`, `footswitch/footswitch-gesture.ts`.
 - `looper-store.ts`: track state machine, master loop, layers, undo/redo, notices.
-- Components: `looper-page` (layout, Z/Y/I shortcuts, suspended banner), `input-panel`
+- Components: `looper-page` (layout, Z/Y/M/I shortcuts, Mute all button, suspended banner), `input-panel`
   (+ `input-panel-layout.ts`, the collapse state service), `noise-gate`, `footswitch`,
   `track-volume` (knob), `loop-position` (ring), `master-reset`; shared `level-meter`,
   `toggle-switch`.
@@ -87,7 +87,7 @@ speakers. Monitoring depends on the worklet, so a worklet crash also cuts monito
      `isMeasuring` blocks the footswitches.
    - Gotcha: the hysteresis must stay smaller than the 6 dB margin, or the noise holds the
      gate open.
-6. **Collapsible Input section** (committed together with this memory.md):
+6. **Collapsible Input section** (commit f9ac83b, which also added this memory.md):
    - The Settings button (`aria-expanded`, I key) hides device, gain, noise gate, latency and
      calibrate. The meter and Monitor toggle stay in the strip.
    - Collapsed settings are `inert` and `visibility: hidden` after a 200 ms grid-rows slide
@@ -97,6 +97,17 @@ speakers. Monitoring depends on the worklet, so a worklet crash also cuts monito
    - Starts expanded. The choice is saved in localStorage key `looper.inputPanelCollapsed`,
      with try/catch.
    - I works even before audio starts.
+7. **Mute all** (not committed yet):
+   - A "Mute all" / "Unmute all" button in Loop controls (`.control-button.mute-button`,
+     lit amber while muted), plus the M key.
+   - Mutes the loop bus only (fast `setTargetAtTime` fade). The loops keep running, so
+     unmuting is in time and restarts nothing. Monitor is untouched.
+   - Recording and overdubbing still work while muted, and new layers stay silent.
+   - Playing and overdubbing footswitch LEDs go dim and dashed, and the state label reads
+     "Playing (muted)". The notice announces "Loops muted" / "Loops unmuted.".
+   - Master Reset or clearing every track unmutes. Not saved across reloads.
+   - State: `AudioEngine.areLoopsMuted` / `setLoopsMuted`; `LooperStore.toggleMuteAll`.
+     Measurements still force the loop bus to 0 and restore it to the mute state after.
 
 ## Known limits / open items
 
@@ -113,4 +124,4 @@ speakers. Monitoring depends on the worklet, so a worklet crash also cuts monito
 
 ## Test counts (latest)
 
-190 unit (20 files), 41 e2e.
+199 unit (20 files), 43 e2e.

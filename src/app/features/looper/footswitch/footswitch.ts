@@ -14,6 +14,9 @@ const TRACK_STATE_LABELS: Record<TrackState, string> = {
   stopped: 'Stopped',
 };
 
+// States whose loop you would hear, so mute all changes how they look.
+const AUDIBLE_STATES: ReadonlySet<TrackState> = new Set(['playing', 'overdubbing']);
+
 /** What started the current press; only the same source can release it. */
 type PressSource = 'pointer' | 'focus-key' | 'shortcut';
 
@@ -35,6 +38,8 @@ export class Footswitch {
   readonly disabled = input(false);
   /** The last-touched track, which Undo and Redo act on. */
   readonly isSelected = input(false);
+  /** Mute all is on: the loop keeps running but can't be heard. */
+  readonly isMuted = input(false);
   /** Key that works this footswitch from anywhere on the page, e.g. '1'. */
   readonly shortcutKey = input<string>();
   /** Id of the text explaining tap, double-tap and hold, shared by all footswitches. */
@@ -45,7 +50,13 @@ export class Footswitch {
   readonly #gesture = new FootswitchGesture();
   #pressSource: PressSource | null = null;
   protected readonly isPressed = signal(false);
-  protected readonly stateLabel = computed(() => TRACK_STATE_LABELS[this.state()]);
+  protected readonly isSilenced = computed(
+    () => this.isMuted() && AUDIBLE_STATES.has(this.state()),
+  );
+  protected readonly stateLabel = computed(() => {
+    const label = TRACK_STATE_LABELS[this.state()];
+    return this.isSilenced() ? `${label} (muted)` : label;
+  });
 
   constructor() {
     this.#gesture.actions$

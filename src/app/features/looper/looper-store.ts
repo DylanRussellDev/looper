@@ -21,6 +21,8 @@ const ACTIVE_STATES: ReadonlySet<TrackState> = new Set([
 const CAPTURING_STATES: ReadonlySet<TrackState> = new Set(['armed', 'recording', 'overdubbing']);
 
 const NO_INPUT_NOTICE = 'No input is connected, so nothing can be recorded. Choose an input above.';
+const LOOPS_MUTED_NOTICE = 'Loops muted. They keep running, so unmuting brings them back in time.';
+const LOOPS_UNMUTED_NOTICE = 'Loops unmuted.';
 const RECORDING_DISCARDED_NOTICE =
   'The input changed during recording, so that take was discarded. Your other loops kept playing.';
 
@@ -78,6 +80,8 @@ export class LooperStore {
   /** The track Undo and Redo act on. */
   readonly lastTouchedTrackId = this.#lastTouchedTrackId.asReadonly();
   readonly notice = this.#notice.asReadonly();
+  /** Mute all: every loop is silenced but keeps its place. Recording still works. */
+  readonly areLoopsMuted = this.#engine.areLoopsMuted;
   readonly isAnyTrackActive = computed(() =>
     this.#tracks().some((track) => ACTIVE_STATES.has(track.state)),
   );
@@ -273,6 +277,12 @@ export class LooperStore {
     this.#engine.setTrackVolume(trackId, volume);
   }
 
+  toggleMuteAll(): void {
+    const isMuted = !this.areLoopsMuted();
+    this.#engine.setLoopsMuted(isMuted);
+    this.#notice.set(isMuted ? LOOPS_MUTED_NOTICE : LOOPS_UNMUTED_NOTICE);
+  }
+
   /**
    * Where in the master loop you are hearing right now, 0..1, or null while nothing is
    * playing (a restart then re-anchors the loop, so there is no position to show).
@@ -298,6 +308,7 @@ export class LooperStore {
     this.#masterLoop.set(null);
     this.#lastTouchedTrackId.set(null);
     this.#notice.set('');
+    this.#unmuteLoops();
   }
 
   #startRecording(trackId: number): void {
@@ -589,6 +600,14 @@ export class LooperStore {
   #resetMasterLoopIfAllEmpty(): void {
     if (this.#tracks().every((track) => track.state === 'empty')) {
       this.#masterLoop.set(null);
+      this.#unmuteLoops();
+    }
+  }
+
+  // A fresh start never begins silent.
+  #unmuteLoops(): void {
+    if (this.areLoopsMuted()) {
+      this.#engine.setLoopsMuted(false);
     }
   }
 

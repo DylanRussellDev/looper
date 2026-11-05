@@ -61,7 +61,7 @@ describe('LooperPage', () => {
   it('marks the touched track as selected for undo and redo', async () => {
     engine.status.set('running');
     await fixture.whenStable();
-    const [undo, redo] = Array.from(element.querySelectorAll<HTMLButtonElement>('.history-button'));
+    const [undo, redo] = Array.from(element.querySelectorAll<HTMLButtonElement>('.control-button'));
     expect(undo!.disabled).toBe(true);
     expect(redo!.disabled).toBe(true);
     expect(element.querySelector('.history-target')!.textContent).toContain('Touch a track');
@@ -120,6 +120,23 @@ describe('LooperPage', () => {
 
       expect(undo).toHaveBeenCalledOnce();
       expect(redo).toHaveBeenCalledOnce();
+    });
+
+    it('mutes all loops with the button or M, and lights the button', async () => {
+      const button = element.querySelector<HTMLButtonElement>('.mute-button')!;
+      expect(button.textContent).toContain('Mute all');
+
+      button.click();
+      await fixture.whenStable();
+      expect(engine.areLoopsMuted()).toBe(true);
+      expect(button.textContent).toContain('Unmute all');
+      expect(button.classList).toContain('is-active');
+
+      pressKey('m');
+      await fixture.whenStable();
+      expect(engine.areLoopsMuted()).toBe(false);
+      pressKey('M', element.querySelector('#input-device')!);
+      expect(engine.areLoopsMuted()).toBe(false);
     });
 
     it('shows and hides the input settings with I, even before audio starts', async () => {

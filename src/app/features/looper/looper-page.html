@@ -44,7 +44,7 @@
     <div class="history">
       <button
         type="button"
-        class="history-button"
+        class="control-button"
         aria-keyshortcuts="Z"
         [disabled]="!canUndo()"
         (click)="undo()"
@@ -53,7 +53,7 @@
       </button>
       <button
         type="button"
-        class="history-button"
+        class="control-button"
         aria-keyshortcuts="Y"
         [disabled]="!canRedo()"
         (click)="redo()"
@@ -62,6 +62,16 @@
       </button>
       <p class="history-target">{{ historyTargetLabel() }}</p>
     </div>
+    <button
+      type="button"
+      class="control-button mute-button"
+      aria-keyshortcuts="M"
+      [class.is-active]="areLoopsMuted()"
+      [disabled]="!isAudioRunning()"
+      (click)="toggleMuteAll()"
+    >
+      {{ areLoopsMuted() ? 'Unmute all' : 'Mute all' }} <kbd aria-hidden="true">M</kbd>
+    </button>
   </section>
 
   <section class="tracks" aria-label="Tracks">
@@ -77,6 +87,7 @@
           [trackId]="track.trackId"
           [state]="track.state"
           [isSelected]="track.trackId === lastTouchedTrackId()"
+          [isMuted]="areLoopsMuted()"
           [shortcutKey]="'' + track.trackId"
           describedBy="footswitch-hint"
           [disabled]="areFootswitchesDisabled()"
@@ -90,6 +101,7 @@
     Footswitches: tap to record, play or overdub. Double-tap to stop. Hold to clear.
     <br />
     Keyboard: <kbd>1</kbd>–<kbd>4</kbd> work the footswitches (tap, double-tap, hold),
-    <kbd>Z</kbd> undoes, <kbd>Y</kbd> redoes, <kbd>I</kbd> shows or hides the input settings.
+    <kbd>Z</kbd> undoes, <kbd>Y</kbd> redoes, <kbd>M</kbd> mutes or unmutes all loops,
+    <kbd>I</kbd> shows or hides the input settings.
   </p>
 </main>

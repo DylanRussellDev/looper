@@ -52,6 +52,7 @@ export class FakeAudioEngine {
   readonly isInputConnected = signal(true);
   readonly inputGain = signal(1);
   readonly isMonitorEnabled = signal(true);
+  readonly areLoopsMuted = signal(false);
   readonly inputLevel = signal<InputLevel>({ peak: 0, rms: 0 });
   readonly latencyOffsetMs = signal(0);
   readonly reportedOutputLatencyMs = signal<number | null>(null);
@@ -88,6 +89,7 @@ export class FakeAudioEngine {
   readonly getAudibleFrame = vi.fn(() => this.currentFrame);
   readonly setInputGain = vi.fn();
   readonly setMonitorEnabled = vi.fn();
+  readonly setLoopsMuted = vi.fn((isMuted: boolean) => this.areLoopsMuted.set(isMuted));
   readonly setLatencyOffset = vi.fn<(milliseconds: number) => void>();
   readonly setTrackVolume = vi.fn<(trackId: number, volume: number) => void>();
   readonly getCurrentFrame = vi.fn(() => this.currentFrame);

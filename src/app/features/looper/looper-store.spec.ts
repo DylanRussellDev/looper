@@ -274,6 +274,51 @@ describe('LooperStore', () => {
     });
   });
 
+  describe('mute all', () => {
+    it('mutes and unmutes the loops, announcing each', async () => {
+      await recordMasterLoop();
+
+      store.toggleMuteAll();
+      expect(engine.setLoopsMuted).toHaveBeenLastCalledWith(true);
+      expect(store.areLoopsMuted()).toBe(true);
+      expect(store.notice()).toContain('Loops muted');
+      expect(getTrack(1).state).toBe('playing');
+
+      store.toggleMuteAll();
+      expect(engine.setLoopsMuted).toHaveBeenLastCalledWith(false);
+      expect(store.notice()).toBe('Loops unmuted.');
+    });
+
+    it('still records while muted, and stays muted', async () => {
+      store.toggleMuteAll();
+      await recordMasterLoop();
+
+      expect(getTrack(1).state).toBe('playing');
+      expect(store.areLoopsMuted()).toBe(true);
+    });
+
+    it('unmutes on Master Reset', async () => {
+      await recordMasterLoop();
+      store.toggleMuteAll();
+      store.resetAll();
+
+      expect(store.areLoopsMuted()).toBe(false);
+    });
+
+    it('unmutes once every track is cleared, but not before', async () => {
+      await recordMasterLoop(1);
+      store.tapTrack(2);
+      takes.at(-1)!.resolve({ buffer: createFakeAudioBuffer(48_000), startFrame: 49_000 });
+      await flush();
+      store.toggleMuteAll();
+
+      store.clearTrack(1);
+      expect(store.areLoopsMuted()).toBe(true);
+      store.clearTrack(2);
+      expect(store.areLoopsMuted()).toBe(false);
+    });
+  });
+
   describe('input interruption', () => {
     it('discards takes, keeps loops playing, and shows a notice', async () => {
       await recordMasterLoop(1);
