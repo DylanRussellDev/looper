@@ -1,0 +1,25 @@
+<div class="knob-well" [class.is-disabled]="disabled()" [style.--knob-value]="volume()">
+  <input
+    #slider
+    class="knob-input"
+    type="range"
+    min="0"
+    max="1"
+    step="0.01"
+    [id]="inputId()"
+    [value]="volume()"
+    [attr.aria-valuetext]="volumePercent() + '%'"
+    [disabled]="disabled()"
+    (input)="setVolume(slider.valueAsNumber)"
+    (pointerdown)="startDrag($event)"
+    (pointermove)="drag($event)"
+    (pointerup)="endDrag()"
+    (pointercancel)="endDrag()"
+  />
+  <span class="scale" aria-hidden="true"></span>
+  <span class="knob" aria-hidden="true"><span class="pointer"></span></span>
+</div>
+<label [for]="inputId()">
+  Volume <span class="visually-hidden">track {{ trackId() }}</span>
+  <output [for]="inputId()">{{ volumePercent() }}%</output>
+</label>

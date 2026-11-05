@@ -1,0 +1,101 @@
+// The knob turns through 270 degrees, from seven o'clock (silent) to five o'clock (full).
+$sweep: 270deg;
+$start: -135deg;
+
+:host {
+  display: grid;
+  justify-items: center;
+  gap: 0.375rem;
+}
+
+.knob-well {
+  --knob-value: 1;
+
+  position: relative;
+  inline-size: 4.5rem;
+  block-size: 4.5rem;
+
+  &.is-disabled {
+    opacity: 0.55;
+  }
+}
+
+// The real slider, invisible but on top, so it receives every pointer and key event.
+.knob-input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  margin: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  opacity: 0;
+  cursor: ns-resize;
+  touch-action: none;
+
+  &:disabled {
+    cursor: not-allowed;
+  }
+}
+
+// The lit arc behind the knob shows the level at a glance.
+.scale {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    from $start,
+    var(--app-color-led-green) calc(var(--knob-value) * #{$sweep}),
+    #2a2e33 0 $sweep,
+    transparent 0
+  );
+  mask: radial-gradient(circle, transparent 62%, #000 63%);
+}
+
+.knob {
+  position: absolute;
+  inset: 0.5625rem;
+  border-radius: 50%;
+  border: 1px solid #0b0c0d;
+  background:
+    repeating-conic-gradient(rgb(255 255 255 / 4%) 0 4deg, transparent 4deg 8deg),
+    radial-gradient(circle at 35% 30%, #5d626a, #2b2f34 70%);
+  box-shadow:
+    0 3px 6px rgb(0 0 0 / 60%),
+    inset 0 1px 1px rgb(255 255 255 / 18%);
+  rotate: calc(#{$start} + var(--knob-value) * #{$sweep});
+  transition: rotate 40ms linear;
+}
+
+.pointer {
+  position: absolute;
+  inset-block-start: 0.25rem;
+  inset-inline-start: 50%;
+  inline-size: 0.1875rem;
+  block-size: 0.875rem;
+  border-radius: 0.125rem;
+  translate: -50% 0;
+  background: var(--app-color-text);
+}
+
+.knob-input:focus-visible ~ .knob {
+  outline: 3px solid var(--app-color-focus);
+  outline-offset: 0.625rem;
+}
+
+label {
+  display: flex;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--app-color-text-muted);
+}
+
+output {
+  font-variant-numeric: tabular-nums;
+  color: var(--app-color-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .knob {
+    transition: none;
+  }
+}

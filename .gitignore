@@ -26,3 +26,9 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Claude
+/memory.md
+
+# Testing
+/test-results

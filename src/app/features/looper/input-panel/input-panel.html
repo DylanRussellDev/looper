@@ -1,0 +1,158 @@
+<section class="panel" aria-labelledby="input-panel-heading">
+  <div class="header">
+    <h2 id="input-panel-heading">Input</h2>
+    <button
+      type="button"
+      class="collapse-button"
+      aria-controls="input-panel-settings"
+      aria-describedby="input-panel-settings-hint"
+      aria-keyshortcuts="I"
+      [attr.aria-expanded]="!isCollapsed()"
+      (click)="toggleCollapsed()"
+    >
+      <span class="chevron" aria-hidden="true"></span>
+      Settings
+      <kbd aria-hidden="true">I</kbd>
+    </button>
+    <span id="input-panel-settings-hint" class="visually-hidden">
+      Device, gain, noise gate and latency
+    </span>
+  </div>
+
+  <!-- Always shown, even collapsed: enough to see the input is alive. -->
+  <div class="strip">
+    <app-level-meter
+      class="meter"
+      label="Input level"
+      [value]="meterLevel()"
+      [isClipping]="isInputClipping()"
+      [marker]="gateMarker()"
+      [isDimmed]="isGateClosed()"
+    />
+    <app-toggle-switch
+      label="Monitor"
+      [checked]="isMonitorEnabled()"
+      [disabled]="!isRunning()"
+      (checkedChange)="setMonitorEnabled($event)"
+    />
+  </div>
+
+  <!-- Inert while collapsed: hidden controls can't be tabbed to or read out. -->
+  <div
+    id="input-panel-settings"
+    class="settings"
+    [class.is-collapsed]="isCollapsed()"
+    [inert]="isCollapsed()"
+  >
+    <div class="settings-content">
+      <div class="field">
+        <label for="input-device">Input device</label>
+        <select
+          #deviceSelect
+          id="input-device"
+          [disabled]="!isRunning()"
+          (change)="selectDevice(deviceSelect.value)"
+        >
+          @for (device of inputDevices(); track device.deviceId) {
+            <option [value]="device.deviceId" [selected]="device.deviceId === selectedDeviceId()">
+              {{ device.label }}
+            </option>
+          } @empty {
+            <option value="">No inputs available</option>
+          }
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="input-gain">
+          Input gain <output for="input-gain">{{ gainPercent() }}%</output>
+        </label>
+        <input
+          #gainSlider
+          id="input-gain"
+          type="range"
+          min="0"
+          max="2"
+          step="0.01"
+          [value]="inputGain()"
+          [disabled]="isGainDisabled()"
+          (input)="setInputGain(gainSlider.valueAsNumber)"
+        />
+      </div>
+
+      <app-noise-gate />
+
+      <div class="field">
+        <label for="latency-offset">Latency compensation (ms)</label>
+        <input
+          #latencyInput
+          id="latency-offset"
+          type="number"
+          min="0"
+          [max]="maxLatencyOffsetMs"
+          step="1"
+          inputmode="numeric"
+          aria-describedby="latency-offset-hint"
+          [value]="latencyOffsetMs()"
+          [disabled]="!isRunning() || isCalibrating()"
+          (change)="setLatencyOffset(latencyInput.valueAsNumber)"
+        />
+        <p id="latency-offset-hint" class="hint">
+          Shifts new recordings earlier so they line up with what you heard. If overdubs sound late,
+          raise this.
+          @if (reportedOutputLatencyMs() !== null) {
+            The browser reports {{ reportedOutputLatencyMs() }} ms of output latency; your input
+            adds more.
+          }
+        </p>
+      </div>
+
+      <div class="calibration">
+        <button
+          type="button"
+          class="calibrate-button"
+          aria-describedby="calibration-hint"
+          [class.is-active]="isCalibrating()"
+          [disabled]="!canCalibrate()"
+          (click)="toggleCalibration()"
+        >
+          {{ calibrationButtonLabel() }}
+        </button>
+        <p id="calibration-hint" class="hint">
+          Measures the latency for you: plays six clicks and listens for them on the input. Connect
+          your interface's output to its input with a cable, or put the mic near the speakers. Loops
+          are muted while it runs; Esc cancels.
+          {{ calibrationBlockedReason() }}
+        </p>
+        <p class="calibration-status" role="status" [class.is-error]="isCalibrationFailed()">
+          {{ calibrationMessage() }}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- While collapsed, measurement progress and results show here instead. -->
+  <div class="collapsed-status" role="status">
+    @if (isCollapsed()) {
+      @for (message of measurementMessages(); track message.text) {
+        <p [class.is-error]="message.isError">{{ message.text }}</p>
+      }
+    }
+  </div>
+
+  @if (isBuiltInMicSelected()) {
+    <p class="warning">
+      Built-in microphone selected. Monitoring is off by default because speakers feed back into the
+      mic. Use headphones before turning Monitor on.
+    </p>
+  }
+
+  <div class="error" role="alert">
+    @if (errorMessage()) {
+      <p>{{ errorMessage() }}</p>
+      @if (canRetryInput()) {
+        <button type="button" class="retry" (click)="retryInput()">Try again</button>
+      }
+    }
+  </div>
+</section>

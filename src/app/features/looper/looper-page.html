@@ -1,0 +1,107 @@
+<main class="pedal">
+  <header class="header">
+    <div class="brand">
+      <h1>Looper</h1>
+      <p class="tagline">4-track loop station</p>
+    </div>
+    <app-master-reset class="reset" [disabled]="!isAudioRunning()" (confirmed)="resetAll()" />
+  </header>
+
+  @if (!isAudioRunning()) {
+    <section class="start" aria-labelledby="start-heading">
+      <h2 id="start-heading">Connect your instrument</h2>
+      <p>
+        Plug in your audio interface or use your microphone, then enable audio. Your browser will
+        ask for microphone access.
+      </p>
+      <button
+        type="button"
+        class="start-button"
+        [disabled]="isAudioStarting()"
+        (click)="startAudio()"
+      >
+        {{ startButtonLabel() }}
+      </button>
+    </section>
+  }
+
+  <div class="suspended" role="alert">
+    @if (isAudioRunning() && isSuspended()) {
+      <p>
+        Audio was paused by the browser or your system, for example because the output device
+        changed. Your loops are kept.
+      </p>
+      <button type="button" class="retry" (click)="resumeAudio()">Resume audio</button>
+    }
+  </div>
+
+  <app-input-panel />
+
+  <p class="notice" role="status">{{ notice() }}</p>
+
+  <section class="controls" aria-label="Loop controls">
+    <app-loop-position />
+    <div class="history">
+      <button
+        type="button"
+        class="control-button"
+        aria-keyshortcuts="Z"
+        [disabled]="!canUndo()"
+        (click)="undo()"
+      >
+        Undo <kbd aria-hidden="true">Z</kbd>
+      </button>
+      <button
+        type="button"
+        class="control-button"
+        aria-keyshortcuts="Y"
+        [disabled]="!canRedo()"
+        (click)="redo()"
+      >
+        Redo <kbd aria-hidden="true">Y</kbd>
+      </button>
+      <p class="history-target">{{ historyTargetLabel() }}</p>
+    </div>
+    <button
+      type="button"
+      class="control-button mute-button"
+      aria-keyshortcuts="M"
+      [class.is-active]="areLoopsMuted()"
+      [disabled]="!isAudioRunning()"
+      (click)="toggleMuteAll()"
+    >
+      {{ areLoopsMuted() ? 'Unmute all' : 'Mute all' }} <kbd aria-hidden="true">M</kbd>
+    </button>
+  </section>
+
+  <section class="tracks" aria-label="Tracks">
+    @for (track of tracks(); track track.trackId) {
+      <div class="channel">
+        <app-track-volume
+          [trackId]="track.trackId"
+          [volume]="track.volume"
+          [disabled]="!isAudioRunning()"
+          (volumeChange)="setTrackVolume(track.trackId, $event)"
+        />
+        <app-footswitch
+          [trackId]="track.trackId"
+          [state]="track.state"
+          [isSelected]="track.trackId === lastTouchedTrackId()"
+          [isMuted]="areLoopsMuted()"
+          [shortcutKey]="'' + track.trackId"
+          describedBy="footswitch-hint"
+          [disabled]="areFootswitchesDisabled()"
+          (action)="pressFootswitch(track.trackId, $event)"
+        />
+      </div>
+    }
+  </section>
+
+  <p id="footswitch-hint" class="shortcuts">
+    Footswitches: tap to record, play or overdub. Double-tap to stop. Hold to clear.
+    <br />
+    Keyboard: <kbd>1</kbd>–<kbd>4</kbd> work the footswitches (tap, double-tap, hold),
+    <kbd>Z</kbd> undoes, <kbd>Y</kbd> redoes, <kbd>M</kbd> mutes or unmutes all loops,
+    <kbd>I</kbd> shows or hides the input settings.
+  </p>
+</main>
